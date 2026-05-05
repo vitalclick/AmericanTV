@@ -1,0 +1,266 @@
+@font-face {
+  font-family: 'vt-icons';
+  src:
+    url('../fonts/vt-icons.ttf?gs0snq') format('truetype'),
+    url('../fonts/vt-icons.woff?gs0snq') format('woff'),
+    url('../fonts/vt-icons.svg?gs0snq#vt-icons') format('svg');
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+
+[class^="vti-"], [class*=" vti-"] {
+  /* use !important to prevent issues with browser extensions that change fonts */
+  font-family: 'vt-icons' !important;
+  speak: never;
+  font-style: normal;
+  font-weight: normal;
+  font-variant: normal;
+  text-transform: none;
+  line-height: 1;
+
+  /* Better Font Rendering =========== */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.vti-sun:before {
+  content: "\e903";
+}
+.vti-moon:before {
+  content: "\e934";
+}
+.vti-add-hook:before {
+  content: "\e900";
+}
+.vti-plus:before {
+  content: "\e901";
+}
+.vti-add-photo:before {
+  content: "\e902";
+}
+.vti-advertising:before {
+  content: "\e904";
+}
+.vti-traffic:before {
+  content: "\e905";
+}
+.vti-left-long:before {
+  content: "\e906";
+}
+.vti-calendar:before {
+  content: "\e907";
+}
+.vti-comment:before {
+  content: "\e908";
+}
+.vti-copy-45deg:before {
+  content: "\e909";
+}
+.vti-copy:before {
+  content: "\e90a";
+}
+.vti-cross:before {
+  content: "\e90b";
+}
+.vti-dashboard:before {
+  content: "\e90c";
+}
+.vti-descord:before {
+  content: "\e90d";
+}
+.vti-dislike-fill:before {
+  content: "\e90e";
+}
+.vti-dislike:before {
+  content: "\e90f";
+}
+.vti-ellipsis-v:before {
+  content: "\e910";
+}
+.vti-embed:before {
+  content: "\e911";
+}
+.vti-emoji-smile:before {
+  content: "\e912";
+}
+.vti-facebook:before {
+  content: "\e913";
+}
+.vti-notification:before {
+  content: "\e914";
+}
+.vti-mobile:before {
+  content: "\e915";
+}
+.vti-top:before {
+  content: "\e916";
+}
+.vti-video:before {
+  content: "\e917";
+}
+.vti-file-lock:before {
+  content: "\e918";
+}
+.vti-game:before {
+  content: "\e919";
+}
+.vti-down-long:before {
+  content: "\e91a";
+}
+.vti-clock:before {
+  content: "\e91b";
+}
+.vti-playback:before {
+  content: "\e91c";
+}
+.vti-home:before {
+  content: "\e91d";
+}
+.vti-info:before {
+  content: "\e91e";
+}
+.vti-instagram:before {
+  content: "\e91f";
+}
+.vti-language:before {
+  content: "\e920";
+}
+.vti-like:before {
+  content: "\e921";
+}
+.vti-like-fill:before {
+  content: "\e922";
+}
+.vti-live:before {
+  content: "\e923";
+}
+.vti-location:before {
+  content: "\e924";
+}
+.vti-logout:before {
+  content: "\e925";
+}
+.vti-menu-dot:before {
+  content: "\e926";
+}
+.vti-menu-bar:before {
+  content: "\e927";
+}
+.vti-ellipsis-h:before {
+  content: "\e928";
+}
+.vti-mic:before {
+  content: "\e929";
+}
+.vti-money:before {
+  content: "\e92a";
+}
+.vti-menu-fill:before {
+  content: "\e92b";
+}
+.vti-monitor:before {
+  content: "\e92c";
+}
+.vti-music:before {
+  content: "\e92d";
+}
+.vti-open-external:before {
+  content: "\e92e";
+}
+.vti-play-fill:before {
+  content: "\e92f";
+}
+.vti-play-circle:before {
+  content: "\e930";
+}
+.vti-playlist:before {
+  content: "\e931";
+}
+.vti-user-security:before {
+  content: "\e932";
+}
+.vti-user-circle:before {
+  content: "\e933";
+}
+.vti-save:before {
+  content: "\e935";
+}
+.vti-search:before {
+  content: "\e936";
+}
+.vti-security:before {
+  content: "\e937";
+}
+.vti-setting:before {
+  content: "\e938";
+}
+.vti-paper-plane:before {
+  content: "\e93a";
+}
+.vti-forword:before {
+  content: "\e93b";
+}
+.vti-shopping-cart:before {
+  content: "\e93c";
+}
+.vti-short:before {
+  content: "\e93d";
+}
+.vti-emoji-grin:before {
+  content: "\e93f";
+}
+.vti-sports:before {
+  content: "\e940";
+}
+.vti-video-stock:before {
+  content: "\e941";
+}
+.vti-subtitle:before {
+  content: "\e942";
+}
+.vti-suffle:before {
+  content: "\e943";
+}
+.vti-switch-account:before {
+  content: "\e944";
+}
+.vti-tiktok:before {
+  content: "\e946";
+}
+.vti-trash:before {
+  content: "\e947";
+}
+.vti-twitter:before {
+  content: "\e948";
+}
+.vti-import-box:before {
+  content: "\e949";
+}
+.vti-video-fill:before {
+  content: "\e94a";
+}
+.vti-export:before {
+  content: "\e94b";
+}
+.vti-export-box:before {
+  content: "\e94c";
+}
+.vti-user-varified:before {
+  content: "\e94d";
+}
+.vti-video-fill-2:before {
+  content: "\e94e";
+}
+.vti-video-studio:before {
+  content: "\e94f";
+}
+.vti-wallet-fill:before {
+  content: "\e950";
+}
+.vti-wallet:before {
+  content: "\e952";
+}
+.vti-video-trending:before {
+  content: "\e953";
+}

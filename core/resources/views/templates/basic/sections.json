@@ -1,0 +1,113 @@
+{
+    "policy_pages": {
+        "builder": true,
+        "no_selection": true,
+        "name": "Policy Pages",
+        "hide_builder": true,
+        "element": {
+            "title": "text",
+            "slug": "title",
+            "details": "textarea-nic",
+            "modal": false,
+            "seo": true
+        }
+    },
+    "register_disable": {
+        "builder": true,
+        "no_selection": true,
+        "name": "Registration Disable",
+        "content": {
+            "images": {
+                "image": {
+                    "size": "280x280"
+                }
+            },
+            "heading": "text",
+            "subheading": "text",
+            "button_name": "text",
+            "button_url": "text"
+        }
+    },
+    "kyc": {
+        "builder": true,
+        "no_selection": true,
+        "name": "KYC Content",
+        "content": {
+            "required": "text",
+            "pending": "text",
+            "reject": "text"
+        }
+    },
+    "ban_page": {
+        "no_selection": true,
+        "builder": true,
+        "name": "Banned Page",
+        "content": {
+            "images": {
+                "image": {
+                    "size": "360x370"
+                }
+            },
+            "heading": "text"
+        }
+    },
+    "auth_page": {
+        "no_selection": true,
+        "builder": true,
+        "name": "Auth Page",
+        "content": {
+            "login_page_title": "text",
+            "register_page_title": "text",
+            "register_page_subtitle": "text",
+            "verification_page_title": "text",
+            "security_page_alert_message": "text",
+            "security_page_link_text": "text"
+        }
+    },
+    "withdraw_method_page": {
+        "no_selection": true,
+        "builder": true,
+        "name": "Withdraw Method Page",
+        "content": {
+            "title": "text",
+            "subtitle": "text"
+        }
+    },
+    "monetization_page": {
+        "no_selection": true,
+        "builder": true,
+        "name": "Monetization Page",
+        "content": {
+            "images": {
+                "first_image": {
+                    "size": "205x140"
+                },
+                "second_image": {
+                    "size": "205x140"
+                }
+            },
+            "title": "text",
+            "subtitle": "text",
+            "card_title": "text",
+            "card_tagline": "text",
+            "congratulation_message": "text",
+            "review_message": "text",
+            "active_message": "text",
+            "reject_message": "text"
+        }
+    },
+    "advertiser_dashboard": {
+        "no_selection": true,
+        "builder": true,
+        "name": "Advertiser Dashboard Page",
+        "content": {
+            "images": {
+                "image": {
+                    "size": "285x285"
+                }
+            },
+            "initiate_message": "text",
+            "review_message": "text"
+        }
+    }
+}
