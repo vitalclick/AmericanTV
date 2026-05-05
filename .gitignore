@@ -1,0 +1,4 @@
+.env
+*.log
+assets/videos
+assets/admin/push_config.json
