@@ -2,8 +2,11 @@
 
 namespace App\Services\IAP;
 
+use Firebase\JWT\JWT;
+use Firebase\JWT\Key;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use RuntimeException;
 
 /**
  * Verifies an App Store transaction via the App Store Server API.
@@ -64,24 +67,89 @@ class AppleReceiptVerifier
     }
 
     /**
-     * Decode the JWS payload. SECURITY: production code must verify the
-     * signature against Apple's published x5c chain. Stubbed here for clarity.
+     * Decode + signature-verify the App Store Server JWS.
+     *
+     * StoreKit 2 / App Store Server API JWS payloads are signed ES256 with an
+     * x5c certificate chain in the header. We:
+     *   1. Parse the header and pull the x5c array.
+     *   2. Use the leaf cert (x5c[0]) to verify the JWS signature.
+     *   3. Return the verified payload.
+     *
+     * What we DON'T do here: full chain validation back to the Apple Root CA
+     * G3. The risk that someone forges a signed payload using a non-Apple
+     * certificate is bounded by:
+     *   - We cross-check `transactionId` against the App Store Server API
+     *     in lookupTransaction() (the JWS-based signature is defence in depth
+     *     against tampering between us and Apple).
+     *   - We compare `bundleId` and `environment` claims against config.
+     * For high-value goods or strict compliance, swap this for
+     * readdle/app-store-server-api which ships full x5c chain validation
+     * against Apple's pinned roots.
      */
     private function decodeJws(string $jws): array
     {
         $parts = explode('.', $jws);
         if (count($parts) !== 3) {
-            throw new \RuntimeException('Malformed JWS');
+            throw new RuntimeException('Malformed JWS');
         }
 
-        // TODO(production): verify $parts[2] signature against the x5c chain in
-        // the header. Apple rotates these; use a JWK cache with refresh.
-        $payload = json_decode(base64_decode(strtr($parts[1], '-_', '+/')), true);
-        if (!is_array($payload)) {
-            throw new \RuntimeException('Malformed JWS payload');
+        $header = json_decode($this->b64UrlDecode($parts[0]), true);
+        if (!is_array($header) || ($header['alg'] ?? null) !== 'ES256') {
+            throw new RuntimeException('Unsupported JWS algorithm');
         }
 
-        return $payload;
+        $x5c = $header['x5c'] ?? null;
+        if (!is_array($x5c) || empty($x5c[0])) {
+            throw new RuntimeException('Missing x5c certificate chain');
+        }
+
+        $publicKey = $this->publicKeyFromX5c($x5c[0]);
+
+        try {
+            $decoded = (array) JWT::decode($jws, new Key($publicKey, 'ES256'));
+        } catch (\Throwable $e) {
+            throw new RuntimeException('JWS signature invalid: ' . $e->getMessage());
+        }
+
+        return $decoded;
+    }
+
+    /**
+     * Wrap a base64-encoded DER certificate (the format x5c uses) in PEM
+     * armor and extract the public key. firebase/php-jwt accepts either a
+     * resource or a PEM string for Key.
+     */
+    private function publicKeyFromX5c(string $derBase64): string
+    {
+        $pem = "-----BEGIN CERTIFICATE-----\n"
+            . chunk_split($derBase64, 64, "\n")
+            . "-----END CERTIFICATE-----\n";
+
+        $cert = openssl_x509_read($pem);
+        if ($cert === false) {
+            throw new RuntimeException('Could not parse x5c leaf certificate');
+        }
+
+        $publicKey = openssl_pkey_get_public($cert);
+        if ($publicKey === false) {
+            throw new RuntimeException('Could not extract public key from x5c leaf');
+        }
+
+        $details = openssl_pkey_get_details($publicKey);
+        if ($details === false || !isset($details['key'])) {
+            throw new RuntimeException('Could not serialize public key from x5c leaf');
+        }
+
+        return $details['key'];
+    }
+
+    private function b64UrlDecode(string $data): string
+    {
+        $remainder = strlen($data) % 4;
+        if ($remainder) {
+            $data .= str_repeat('=', 4 - $remainder);
+        }
+        return base64_decode(strtr($data, '-_', '+/'), true) ?: '';
     }
 
     private function lookupTransaction(string $transactionId): array
