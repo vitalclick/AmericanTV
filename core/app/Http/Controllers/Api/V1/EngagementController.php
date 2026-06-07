@@ -10,7 +10,10 @@ use App\Models\Subscriber;
 use App\Models\User;
 use App\Models\UserNotification;
 use App\Models\UserReaction;
+use App\Http\Resources\VideoSummaryResource;
 use App\Models\Video;
+use App\Models\WatchHistory;
+use App\Models\WatchLater;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -234,34 +237,72 @@ class EngagementController extends Controller
         return $isLike === Status::YES ? 1 : -1;
     }
 
-    public function listWatchLater(Request $request): JsonResponse
+    public function listWatchLater(Request $request): ResourceCollection
     {
-        return $this->stub();
+        $videos = Video::with('user', 'videoFiles')
+            ->whereIn(
+                'id',
+                WatchLater::where('user_id', $request->user()->id)->pluck('video_id'),
+            )
+            ->published()
+            ->whereHas('user', fn (Builder $q) => $q->active())
+            ->orderByDesc('id')
+            ->paginate(20);
+
+        return VideoSummaryResource::collection($videos);
     }
 
     public function addWatchLater(Request $request, int $videoId): JsonResponse
     {
-        return $this->stub();
+        $video = Video::published()
+            ->whereHas('user', fn (Builder $q) => $q->active())
+            ->findOrFail($videoId);
+
+        WatchLater::firstOrCreate([
+            'user_id'  => $request->user()->id,
+            'video_id' => $video->id,
+        ]);
+
+        return response()->json([], 204);
     }
 
     public function removeWatchLater(Request $request, int $videoId): JsonResponse
     {
-        return $this->stub();
+        WatchLater::where('user_id', $request->user()->id)
+            ->where('video_id', $videoId)
+            ->delete();
+
+        return response()->json([], 204);
     }
 
-    public function listHistory(Request $request): JsonResponse
+    public function listHistory(Request $request): ResourceCollection
     {
-        return $this->stub();
+        // Order by last_view rather than primary key — re-watches should
+        // bubble back to the top, matching how the web `history` page renders.
+        $videos = Video::with('user', 'videoFiles')
+            ->join('watch_histories', 'watch_histories.video_id', '=', 'videos.id')
+            ->where('watch_histories.user_id', $request->user()->id)
+            ->whereHas('user', fn (Builder $q) => $q->active())
+            ->orderByDesc('watch_histories.last_view')
+            ->select('videos.*', 'watch_histories.last_view as _last_view')
+            ->paginate(20);
+
+        return VideoSummaryResource::collection($videos);
     }
 
     public function removeHistory(Request $request, int $videoId): JsonResponse
     {
-        return $this->stub();
+        WatchHistory::where('user_id', $request->user()->id)
+            ->where('video_id', $videoId)
+            ->delete();
+
+        return response()->json([], 204);
     }
 
     public function clearHistory(Request $request): JsonResponse
     {
-        return $this->stub();
+        WatchHistory::where('user_id', $request->user()->id)->delete();
+        return response()->json([], 204);
     }
 
     private function stub(): JsonResponse

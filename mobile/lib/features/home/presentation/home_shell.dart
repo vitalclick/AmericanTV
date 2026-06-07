@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../auth/application/auth_controller.dart';
 import '../../feed/presentation/feed_screen.dart';
+import '../../library/presentation/library_screen.dart';
 import '../../search/presentation/search_screen.dart';
 
 /// Tabbed shell shown after login. The feed is the only real tab today;
@@ -37,7 +38,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         children: const [
           FeedScreen(),
           SearchScreen(),
-          _PlaceholderTab(label: 'Library', icon: Icons.video_library_outlined),
+          LibraryScreen(),
           _PlaceholderTab(label: 'Profile', icon: Icons.person_outline),
         ],
       ),

@@ -6,6 +6,7 @@ use App\Constants\Status;
 use App\Http\Controllers\Controller;
 use App\Models\Impression;
 use App\Models\Video;
+use App\Models\WatchHistory;
 use App\Services\Stream\CloudflareStreamService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -94,6 +95,17 @@ class PlaybackController extends Controller
             'user_id'  => $video->user_id,
             'video_id' => $video->id,
         ]);
+
+        if ($request->user()) {
+            // Bubble the row back to "now" if it already exists so the Library
+            // tab's history orders by most-recent watch.
+            $history = WatchHistory::firstOrNew([
+                'user_id'  => $request->user()->id,
+                'video_id' => $video->id,
+            ]);
+            $history->last_view = Carbon::now();
+            $history->save();
+        }
 
         return response()->json([], 204);
     }
