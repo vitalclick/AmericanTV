@@ -41,6 +41,59 @@ jobs:
 
       - run: flutter test
 
+      # Compile-test the native Android shim by building a debug APK.
+      # Catches Kotlin syntax / dependency breakage at PR time instead
+      # of waiting for Codemagic on the next release. We don't sign,
+      # we don't run on a device — pure compile-and-link smoke test.
+      - name: Layer Android shim into the generated project
+        run: |
+          mkdir -p android/app/src/main/kotlin/com/americantv/app/upload
+          cp native/android/BackgroundUploadHandler.kt \
+             android/app/src/main/kotlin/com/americantv/app/upload/
+
+      - name: Compile-test Android (debug, no signing)
+        run: flutter build apk --debug --no-tree-shake-icons
+
+  ios-compile:
+    # Macs are expensive on GHA, so the iOS compile job runs only on
+    # PRs that touch mobile/ — not on every push. Same intent as the
+    # main mobile job's `if`, just gated on the macOS runner.
+    if: |
+      contains(github.event.pull_request.changed_files || '', 'mobile/native/ios/') ||
+      contains(github.event.pull_request.changed_files || '', 'mobile/pubspec.yaml')
+    runs-on: macos-14
+    defaults:
+      run:
+        working-directory: mobile
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.24.x'
+          cache: true
+
+      - name: Materialize iOS project
+        run: flutter create . --org com.americantv --project-name americantv --platforms ios --no-overwrite
+
+      - name: Layer iOS shim into the generated project
+        run: cp native/ios/BackgroundUploadHandler.swift ios/Runner/
+
+      - name: Stub .env so dotenv asset loads
+        run: cp .env.example .env
+
+      - run: flutter pub get
+
+      - name: Run codegen
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      # Compile-test the native iOS shim by building an unsigned IPA.
+      # Catches Swift syntax / API-deprecation breakage at PR time.
+      - name: Compile-test iOS (release, no codesign)
+        run: flutter build ios --release --no-codesign --no-tree-shake-icons
+
   laravel:
     runs-on: ubuntu-latest
     defaults:
