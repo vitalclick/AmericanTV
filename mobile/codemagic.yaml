@@ -292,8 +292,35 @@ workflows:
             --build-number=$BUILD_NUMBER \
             --export-options-plist=/Users/builder/export_options.plist
 
+      - name: Upload dSYMs to Crashlytics
+        # Crashlytics needs the debug symbols to symbolicate crash
+        # reports. iOS releases ship stripped binaries, so without this
+        # step every crash on TestFlight shows as a hex address tree.
+        # Skips gracefully if Firebase isn't configured (env var empty).
+        script: |
+          cd $CM_BUILD_DIR/mobile
+          if [ -z "$FIREBASE_GOOGLE_SERVICE_INFO_PLIST" ]; then
+            echo "Firebase not configured — skipping dSYM upload."
+            exit 0
+          fi
+          UPLOADER=$(find ios/Pods -name 'upload-symbols' -type f | head -n 1)
+          if [ -z "$UPLOADER" ]; then
+            echo "upload-symbols binary not in Pods/FirebaseCrashlytics — Crashlytics pod likely missing."
+            exit 0
+          fi
+          DSYMS_DIR=$(find build/ios/archive -type d -name 'dSYMs' | head -n 1)
+          if [ -z "$DSYMS_DIR" ] || [ ! -d "$DSYMS_DIR" ]; then
+            echo "No dSYMs directory found under build/ios/archive — skipping."
+            exit 0
+          fi
+          "$UPLOADER" \
+            -gsp ios/Runner/GoogleService-Info.plist \
+            -p ios \
+            "$DSYMS_DIR"
+
     artifacts:
       - mobile/build/ios/ipa/*.ipa
+      - mobile/build/ios/archive/**/dSYMs/**
       - /tmp/xcodebuild_logs/*.log
       - mobile/flutter_drive.log
 
@@ -370,8 +397,27 @@ workflows:
             --build-number=$BUILD_NUMBER \
             --export-options-plist=/Users/builder/export_options.plist
 
+      - name: Upload dSYMs to Crashlytics
+        script: |
+          cd $CM_BUILD_DIR/mobile
+          if [ -z "$FIREBASE_GOOGLE_SERVICE_INFO_PLIST" ]; then
+            echo "Firebase not configured — skipping dSYM upload."
+            exit 0
+          fi
+          UPLOADER=$(find ios/Pods -name 'upload-symbols' -type f | head -n 1)
+          DSYMS_DIR=$(find build/ios/archive -type d -name 'dSYMs' | head -n 1)
+          if [ -z "$UPLOADER" ] || [ -z "$DSYMS_DIR" ]; then
+            echo "Missing upload-symbols binary or dSYMs directory — skipping."
+            exit 0
+          fi
+          "$UPLOADER" \
+            -gsp ios/Runner/GoogleService-Info.plist \
+            -p ios \
+            "$DSYMS_DIR"
+
     artifacts:
       - mobile/build/ios/ipa/*.ipa
+      - mobile/build/ios/archive/**/dSYMs/**
       - /tmp/xcodebuild_logs/*.log
 
     publishing:

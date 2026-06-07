@@ -160,25 +160,20 @@ Existing installs roll back via Play Store auto-update on next check.
 
 ## Crashlytics symbol upload
 
-iOS dSYMs are emitted by `flutter build ipa`. The Codemagic pipeline
-currently doesn't upload them automatically. To do so:
+Both platforms now upload symbols automatically:
 
-1. Add an env var `FIREBASE_APP_ID_IOS` (the iOS app ID from the Firebase
-   project, format `1:NNN:ios:YYY`).
-2. Add this script to the ios-testflight and ios-app-store workflows
-   before publishing:
-   ```yaml
-   - name: Upload dSYMs to Crashlytics
-     script: |
-       cd $CM_BUILD_DIR/mobile/build/ios/archive/Runner.xcarchive/dSYMs
-       /Pods/FirebaseCrashlytics/upload-symbols \
-         -gsp ../../../../ios/Runner/GoogleService-Info.plist \
-         -p ios .
-   ```
+- **iOS**: the `Upload dSYMs to Crashlytics` step in both ios workflows
+  finds the FirebaseCrashlytics `upload-symbols` binary inside the
+  CocoaPods install and feeds it the dSYMs from the build archive.
+  Skips gracefully if Firebase isn't configured (no
+  `FIREBASE_GOOGLE_SERVICE_INFO_PLIST` env var).
+- **Android**: the Crashlytics Gradle plugin uploads the obfuscation
+  mapping (`mapping.txt`) automatically when `minifyEnabled = true` on
+  the release buildType.
 
-Android obfuscation maps go to Crashlytics automatically via the
-`crashlytics_mapping.txt` upload that the Crashlytics Gradle plugin
-runs when minifyEnabled is true.
+If a crash on TestFlight still shows as a hex address tree, check the
+"Upload dSYMs" step log for the actual upload command line — likely the
+dSYMs directory wasn't found.
 
 ## Feature flag suggestions
 
