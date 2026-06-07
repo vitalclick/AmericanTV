@@ -14,6 +14,7 @@ class VideoDetail {
     required this.subtitles,
     this.category,
     this.accessPlans = const [],
+    this.isSubscribed = false,
   });
 
   factory VideoDetail.fromJson(Map<String, dynamic> json) {
@@ -31,6 +32,7 @@ class VideoDetail {
       comments: (json['comments'] as num?)?.toInt() ?? 0,
       userReaction: (json['user_reaction'] as num?)?.toInt() ?? 0,
       userHasAccess: json['user_has_access'] as bool? ?? true,
+      isSubscribed: json['is_subscribed'] as bool? ?? false,
       subtitles: ((json['subtitles'] as List?) ?? const [])
           .map((e) => Subtitle.fromJson(e as Map<String, dynamic>))
           .toList(),
@@ -49,6 +51,7 @@ class VideoDetail {
   final int comments;
   final int userReaction;
   final bool userHasAccess;
+  final bool isSubscribed;
   final List<Subtitle> subtitles;
   final List<AccessPlan> accessPlans;
 }

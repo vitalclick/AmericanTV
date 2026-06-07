@@ -121,7 +121,10 @@ class _DetailBody extends ConsumerWidget {
               _ReactionBar(detail: detail),
               if (detail.summary.channel?.id != null) ...[
                 const SizedBox(height: 12),
-                _SubscribeButton(channelId: detail.summary.channel!.id),
+                _SubscribeButton(
+                  channelId: detail.summary.channel!.id,
+                  initialSubscribed: detail.isSubscribed,
+                ),
               ],
               const Divider(height: 32),
               if (detail.description.isNotEmpty) ...[
@@ -438,15 +441,16 @@ class _PaywallBadge extends StatelessWidget {
 }
 
 class _SubscribeButton extends ConsumerStatefulWidget {
-  const _SubscribeButton({required this.channelId});
+  const _SubscribeButton({required this.channelId, this.initialSubscribed = false});
   final int channelId;
+  final bool initialSubscribed;
 
   @override
   ConsumerState<_SubscribeButton> createState() => _SubscribeButtonState();
 }
 
 class _SubscribeButtonState extends ConsumerState<_SubscribeButton> {
-  bool _subscribed = false; // Server hasn't told us yet — assume not.
+  late bool _subscribed = widget.initialSubscribed;
   bool _busy = false;
 
   Future<void> _toggle() async {
