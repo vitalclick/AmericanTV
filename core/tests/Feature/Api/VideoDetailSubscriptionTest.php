@@ -84,6 +84,46 @@ class VideoDetailSubscriptionTest extends TestCase
             ->assertJsonPath('data.is_subscribed', false);
     }
 
+    /**
+     * Defensive: exercise the fallback branch where VideoDetailResource is
+     * given a Video whose user.subscribers relation isn't eager-loaded.
+     *
+     * The Controller always eager-loads today (per the test above), but
+     * the Resource's else-branch falls through to a direct query so other
+     * future callers (admin views, jobs, custom controllers) get the right
+     * answer too. Without this test, an optimization that drops the
+     * relation could silently break those paths.
+     */
+    public function test_resource_falls_back_to_a_direct_query_when_subscribers_arent_eager_loaded(): void
+    {
+        $video  = $this->makePublishedVideo();
+        $viewer = $this->makeUser(['email' => 'fallback-' . uniqid() . '@example.com']);
+
+        Subscriber::forceCreate([
+            'user_id'      => $video->user_id,
+            'following_id' => $viewer->id,
+        ]);
+
+        // Re-fetch with NO `with('user.subscribers')` clause — the user
+        // relation is loaded (Resource needs it for channel info) but
+        // user.subscribers is intentionally absent.
+        $bareVideo = \App\Models\Video::with('user', 'category', 'tags', 'subtitles', 'userReactions')
+            ->where('id', $video->id)
+            ->first();
+
+        $this->assertFalse(
+            $bareVideo->user->relationLoaded('subscribers'),
+            'Precondition: user.subscribers should NOT be eager-loaded.',
+        );
+
+        $request = \Illuminate\Http\Request::create('/test');
+        $request->setUserResolver(fn () => $viewer);
+
+        $payload = (new \App\Http\Resources\VideoDetailResource($bareVideo))->toArray($request);
+
+        $this->assertTrue($payload['is_subscribed']);
+    }
+
     private function makeUser(array $overrides = []): User
     {
         return User::forceCreate(array_merge([
