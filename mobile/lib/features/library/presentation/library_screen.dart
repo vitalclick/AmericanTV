@@ -19,19 +19,25 @@ final _historyProvider =
   return page.videos;
 });
 
+final _purchasedProvider =
+    FutureProvider.autoDispose<PurchasedLibrary>((ref) async {
+  return ref.read(libraryRepositoryProvider).purchased();
+});
+
 class LibraryScreen extends ConsumerWidget {
   const LibraryScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Column(
         children: [
           const TabBar(
             tabs: [
               Tab(icon: Icon(Icons.watch_later_outlined), text: 'Watch Later'),
               Tab(icon: Icon(Icons.history), text: 'History'),
+              Tab(icon: Icon(Icons.shopping_bag_outlined), text: 'Purchased'),
             ],
           ),
           Expanded(
@@ -60,6 +66,7 @@ class LibraryScreen extends ConsumerWidget {
                     ref.invalidate(_historyProvider);
                   },
                 ),
+                const _PurchasedTab(),
               ],
             ),
           ),
@@ -160,6 +167,112 @@ class _Tile extends StatelessWidget {
         icon: const Icon(Icons.close),
         tooltip: 'Remove',
         onPressed: onRemove,
+      ),
+    );
+  }
+}
+
+class _PurchasedTab extends ConsumerWidget {
+  const _PurchasedTab();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final async = ref.watch(_purchasedProvider);
+    return async.when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (e, _) => Center(
+        child: Text(e is ApiException ? e.message : 'Could not load purchases.'),
+      ),
+      data: (library) {
+        if (library.videos.isEmpty && library.activePlans.isEmpty) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.all(24),
+              child: Text(
+                "You haven't purchased anything yet.",
+                textAlign: TextAlign.center,
+              ),
+            ),
+          );
+        }
+        return RefreshIndicator(
+          onRefresh: () async => ref.invalidate(_purchasedProvider),
+          child: ListView(
+            children: [
+              if (library.activePlans.isNotEmpty) ...[
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                  child: Text(
+                    'ACTIVE SUBSCRIPTIONS',
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          letterSpacing: 1.2,
+                          color: Theme.of(context).disabledColor,
+                        ),
+                  ),
+                ),
+                for (final plan in library.activePlans)
+                  ListTile(
+                    leading: const Icon(Icons.workspace_premium_outlined),
+                    title: Text(plan.name),
+                    subtitle: Text(
+                      'Renews ${_relative(plan.expiresAt)}',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                const Divider(height: 1),
+              ],
+              if (library.videos.isNotEmpty) ...[
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                  child: Text(
+                    'VIDEOS',
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          letterSpacing: 1.2,
+                          color: Theme.of(context).disabledColor,
+                        ),
+                  ),
+                ),
+                for (final video in library.videos)
+                  _PurchasedVideoTile(video: video),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  String _relative(DateTime when) {
+    final diff = when.difference(DateTime.now());
+    if (diff.isNegative) return 'expired';
+    if (diff.inDays >= 1) return 'in ${diff.inDays} days';
+    return 'in ${diff.inHours} hours';
+  }
+}
+
+class _PurchasedVideoTile extends StatelessWidget {
+  const _PurchasedVideoTile({required this.video});
+  final VideoSummary video;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      onTap: () => context.push('/video/${video.slug}'),
+      leading: SizedBox(
+        width: 120,
+        height: 68,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(6),
+          child: video.thumbnail != null
+              ? CachedNetworkImage(imageUrl: video.thumbnail!, fit: BoxFit.cover)
+              : Container(color: Theme.of(context).colorScheme.surfaceContainerHighest),
+        ),
+      ),
+      title: Text(video.title, maxLines: 2, overflow: TextOverflow.ellipsis),
+      subtitle: Text(
+        video.channel?.name ?? '',
+        style: Theme.of(context).textTheme.bodySmall,
       ),
     );
   }

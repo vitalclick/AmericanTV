@@ -11,6 +11,9 @@ use App\Models\User;
 use App\Models\UserNotification;
 use App\Models\UserReaction;
 use App\Http\Resources\VideoSummaryResource;
+use App\Models\PurchasedPlan;
+use App\Models\PurchasedPlaylist;
+use App\Models\PurchasedVideo;
 use App\Models\Video;
 use App\Models\WatchHistory;
 use App\Models\WatchLater;
@@ -18,6 +21,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\ResourceCollection;
+use Illuminate\Support\Carbon;
 use Illuminate\Validation\Rule;
 
 /**
@@ -303,6 +307,77 @@ class EngagementController extends Controller
     {
         WatchHistory::where('user_id', $request->user()->id)->delete();
         return response()->json([], 204);
+    }
+
+    /**
+     * Surfaces everything the user has bought a la carte (videos + playlists)
+     * AND every video unlocked via an active plan. Lets the mobile Library
+     * tab show one consolidated "Purchased" list rather than three.
+     */
+    public function listPurchased(Request $request): JsonResponse
+    {
+        $userId = $request->user()->id;
+
+        $directVideoIds = PurchasedVideo::where('user_id', $userId)->pluck('video_id');
+
+        $playlistVideoIds = PurchasedPlaylist::where('user_id', $userId)
+            ->with('playlist.videos:id')
+            ->get()
+            ->flatMap(fn ($p) => optional($p->playlist?->videos)->pluck('id') ?? collect())
+            ->unique();
+
+        $planVideoIds = PurchasedPlan::where('user_id', $userId)
+            ->where('expired_date', '>=', Carbon::now())
+            ->with('plan.videos:id', 'plan.playlists.videos:id')
+            ->get()
+            ->flatMap(function ($p) {
+                $own  = optional($p->plan?->videos)->pluck('id') ?? collect();
+                $list = optional($p->plan?->playlists)?->flatMap(fn ($pl) => $pl->videos->pluck('id')) ?? collect();
+                return $own->merge($list);
+            })
+            ->unique();
+
+        $allIds = $directVideoIds->merge($playlistVideoIds)->merge($planVideoIds)->unique()->values();
+
+        if ($allIds->isEmpty()) {
+            return response()->json([
+                'data'           => [],
+                'meta'           => ['total' => 0],
+                'active_plans'   => [],
+            ]);
+        }
+
+        $videos = Video::with('user', 'videoFiles')
+            ->whereIn('id', $allIds)
+            ->published()
+            ->whereHas('user', fn (Builder $q) => $q->active())
+            ->orderByDesc('id')
+            ->paginate(20);
+
+        $activePlans = PurchasedPlan::where('user_id', $userId)
+            ->where('expired_date', '>=', Carbon::now())
+            ->with('plan:id,slug,name,price')
+            ->latest('id')
+            ->get()
+            ->filter(fn ($p) => $p->plan !== null)
+            ->map(fn ($p) => [
+                'plan_id'      => $p->plan->id,
+                'slug'         => $p->plan->slug,
+                'name'         => $p->plan->name,
+                'expires_at'   => Carbon::parse($p->expired_date)->toIso8601String(),
+            ])
+            ->values();
+
+        return response()->json([
+            'data' => VideoSummaryResource::collection($videos)->toArray($request),
+            'meta' => [
+                'current_page' => $videos->currentPage(),
+                'per_page'     => $videos->perPage(),
+                'total'        => $videos->total(),
+                'last_page'    => $videos->lastPage(),
+            ],
+            'active_plans' => $activePlans,
+        ]);
     }
 
     private function stub(): JsonResponse

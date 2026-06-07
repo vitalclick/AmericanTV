@@ -66,6 +66,8 @@ Route::group([], function () {
         Route::delete('history/{videoId}', 'EngagementController@removeHistory');
         Route::delete('history', 'EngagementController@clearHistory');
 
+        Route::get('library/purchased', 'EngagementController@listPurchased');
+
         // Account
         Route::get('me', 'MeController@show');
         Route::patch('me/profile', 'MeController@updateProfile');
