@@ -152,12 +152,25 @@ definitions:
         fi
 
     - name: Generate launcher icons
+      # ALLOW_DEFAULT_ICON gates the fallback:
+      #   - unset / "false": missing icon source FAILS the build. Used by
+      #     production workflows so we never accidentally ship the
+      #     Flutter default to the store.
+      #   - "true": missing icon source is logged and the build continues
+      #     with the Flutter default. Used by dev / TestFlight smoke runs
+      #     where the design assets aren't always wired up.
       script: |
         cd $CM_BUILD_DIR/mobile
         if [ -f assets/icon/app-icon.png ]; then
           dart run flutter_launcher_icons
+        elif [ "$ALLOW_DEFAULT_ICON" = "true" ]; then
+          echo "No app-icon.png; ALLOW_DEFAULT_ICON=true — using Flutter's default icon."
         else
-          echo "No app-icon.png — skipping icon generation. The build will use Flutter's default."
+          echo "FATAL: No app-icon.png and ALLOW_DEFAULT_ICON is not 'true'."
+          echo "Either populate APP_ICON_PNG_B64 in the env group OR set"
+          echo "ALLOW_DEFAULT_ICON=true on the workflow to acknowledge the"
+          echo "default-icon build."
+          exit 1
         fi
 
     - name: Rewrite platform identifiers
@@ -226,6 +239,10 @@ workflows:
         APPLE_TEAM_ID: PDNU7JKBQZ
         XCODE_WORKSPACE: ios/Runner.xcworkspace
         XCODE_SCHEME: Runner
+        # TestFlight is willing to ship a Flutter-default icon during
+        # internal-tester smoke runs. App Store Review isn't (see
+        # ios-app-store workflow).
+        ALLOW_DEFAULT_ICON: "true"
     integrations:
       app_store_connect: americantv-app-store
     cache:
@@ -351,6 +368,8 @@ workflows:
         BUNDLE_ID: com.americantv.userapp
         APP_STORE_APP_ID: 6743315031
         APPLE_TEAM_ID: PDNU7JKBQZ
+        # App Store Review rejects default-icon builds. No ALLOW_DEFAULT_ICON
+        # here so a missing APP_ICON_PNG_B64 fails the build loudly.
     integrations:
       app_store_connect: americantv-app-store
 
@@ -444,6 +463,7 @@ workflows:
       vars:
         PACKAGE_NAME: com.americantv.app
         GOOGLE_PLAY_TRACK: internal
+        ALLOW_DEFAULT_ICON: "true"
     cache:
       cache_paths:
         - $HOME/.gradle/caches
@@ -517,6 +537,7 @@ workflows:
         # Staged rollout — 10% on first push to production. Bump in the
         # Play Console dashboard once the release is healthy.
         ROLLOUT_FRACTION: 0.1
+        # Production builds must ship the brand icon; missing icon fails.
 
     scripts:
       - *base_scripts
