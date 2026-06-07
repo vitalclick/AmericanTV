@@ -44,8 +44,12 @@ abstract class TestCase extends BaseTestCase
         parent::tearDown();
     }
 
-    protected function createApplication()
+    public function createApplication()
     {
+        // Visibility must be `public` to match the parent
+        // Illuminate\Foundation\Testing\TestCase::createApplication —
+        // PHP refuses to start the test runner if an override tightens
+        // visibility.
         $app = require __DIR__.'/../bootstrap/app.php';
         $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
         return $app;
