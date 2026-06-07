@@ -19,10 +19,21 @@ use Tests\TestCase as AppTestCase;
  *     still survives across tests under singleton(), and bind() leaves
  *     the factory itself behind. Both leak.
  *
- * The check greps the tests/ directory for any of those shapes, extracts
- * the FQCN, and asserts the FQCN is in the const list. New external
- * clients either get added to the const or the test author has to
- * refactor away from the container binding.
+ * Detected shapes:
+ *   $this->app->instance(Foo::class, $mock)
+ *   $this->app->bind(Foo::class, fn () => ...)
+ *   $this->app->singleton(Foo::class, ...)
+ *   app()->instance(Foo::class, ...)
+ *   App::instance(Foo::class, ...)
+ *   App::bind / App::singleton  (Illuminate\Support\Facades\App)
+ *
+ * Exempting a single binding (rare — usually a sign the test needs a
+ * different shape) is possible via a `@audit-ignore` comment on the
+ * preceding line:
+ *
+ *   // @audit-ignore: binding RetiredFooClient is a one-shot test for the
+ *   //                deprecation path; not worth adding to the const.
+ *   $this->app->instance(RetiredFooClient::class, $mock);
  */
 class TestContainerBindingsAudit extends TestCase
 {
@@ -46,22 +57,27 @@ class TestContainerBindingsAudit extends TestCase
         $files = $this->phpFilesUnder($testsDir);
 
         $methodAlternation = implode('|', self::BINDING_METHODS);
-        $pattern = '/->(' . $methodAlternation . ')\(\s*([A-Za-z0-9_\\\\]+)::class/m';
+        // Catches both arrow ($this->app->) and facade (App::) forms.
+        $pattern = '/(?:->|::)(' . $methodAlternation . ')\(\s*([A-Za-z0-9_\\\\]+)::class/m';
 
         $bound = [];
         foreach ($files as $file) {
             $source = file_get_contents($file);
 
-            if (! preg_match_all($pattern, $source, $matches)) {
+            if (! preg_match_all($pattern, $source, $matches, PREG_OFFSET_CAPTURE)) {
                 continue;
             }
 
-            // $matches[1] holds the method name, $matches[2] holds the FQCN.
-            foreach ($matches[2] as $i => $fqcn) {
+            foreach ($matches[2] as $i => $fqcnMatch) {
+                [$fqcn, $offset] = $fqcnMatch;
+                if ($this->hasAuditIgnoreAbove($source, $offset)) {
+                    continue;
+                }
+
                 $absolute = $this->resolveFqcn($source, $fqcn);
                 if ($absolute === null) continue;
 
-                $method = $matches[1][$i];
+                $method = $matches[1][$i][0];
                 $bound[$absolute] = ($bound[$absolute] ?? '') . " {$file}#{$method}";
             }
         }
@@ -92,8 +108,38 @@ class TestContainerBindingsAudit extends TestCase
                 )
             ) . "\n\n"
             . "Either add the class to TestCase::TEST_ONLY_BINDINGS so it gets forgotten\n"
-            . "on tearDown, or refactor the test to avoid the container binding."
+            . "on tearDown, OR mark the binding with a `// @audit-ignore: reason`\n"
+            . "comment on the preceding line."
         );
+    }
+
+    /**
+     * Look at the lines immediately before $offset; if any of the (up to 3)
+     * preceding non-blank lines is a comment containing `@audit-ignore`,
+     * the binding is exempted.
+     */
+    private function hasAuditIgnoreAbove(string $source, int $offset): bool
+    {
+        $upTo = substr($source, 0, $offset);
+        $lines = explode("\n", $upTo);
+        // Walk backwards through up to 3 non-blank lines.
+        $checked = 0;
+        for ($i = count($lines) - 1; $i >= 0 && $checked < 3; $i--) {
+            $line = trim($lines[$i]);
+            if ($line === '') continue;
+            $checked++;
+            if (str_contains($line, '@audit-ignore') &&
+                (str_starts_with($line, '//') || str_starts_with($line, '*') || str_starts_with($line, '#'))) {
+                return true;
+            }
+            // First non-blank, non-comment line we hit — stop walking.
+            if (! str_starts_with($line, '//') &&
+                ! str_starts_with($line, '*') &&
+                ! str_starts_with($line, '#')) {
+                return false;
+            }
+        }
+        return false;
     }
 
     private function phpFilesUnder(string $dir): array
