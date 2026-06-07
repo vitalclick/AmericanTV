@@ -6,6 +6,7 @@ use App\Constants\Status;
 use App\Models\Plan;
 use App\Models\PurchasedPlan;
 use App\Models\User;
+use App\Models\UserLogin;
 use App\Models\Video;
 use App\Models\WatchLater;
 use Illuminate\Database\Seeder;
@@ -64,8 +65,46 @@ class AppReviewDemoSeeder extends Seeder
 
         $this->primeWatchLater($user);
         $this->ensureActiveSubscription($user);
+        $this->stampRecentLogin($user);
 
         $this->command->info("App Review demo user ready: {$email}");
+    }
+
+    /**
+     * Apple sometimes flags accounts with no recent activity as "inactive"
+     * during App Store Review — they expect to see a user who's been
+     * using the app. Drop a fresh UserLogin row stamped with the same
+     * geo metadata the real login flow records, so the admin / activity
+     * surfaces show a recent session.
+     */
+    private function stampRecentLogin(User $user): void
+    {
+        // Idempotent: refresh the most recent row's timestamp rather than
+        // accumulating one per seed run. Keeps the activity log clean
+        // even when the seeder runs on every deploy.
+        $login = UserLogin::where('user_id', $user->id)
+            ->latest('id')
+            ->first();
+
+        if (! $login) {
+            $login = new UserLogin();
+            $login->user_id = $user->id;
+            // Conservative placeholders. The real login flow rewrites these
+            // on the next sign-in; reviewers signing in for the first time
+            // will overwrite with their actual geo.
+            $login->user_ip      = '0.0.0.0';
+            $login->city         = 'Cupertino';
+            $login->country      = 'United States';
+            $login->country_code = 'US';
+            $login->longitude    = '-122.0322';
+            $login->latitude     = '37.3230';
+            $login->browser      = 'AmericanTV App';
+            $login->os           = 'iOS / Android';
+        }
+
+        $login->created_at = Carbon::now();
+        $login->updated_at = Carbon::now();
+        $login->save();
     }
 
     /**
