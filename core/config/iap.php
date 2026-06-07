@@ -20,4 +20,10 @@ return [
         'package_name'         => env('IAP_GOOGLE_PACKAGE_NAME'),
         'service_account_json' => env('IAP_GOOGLE_SERVICE_ACCOUNT_JSON'),
     ],
+
+    'revenuecat' => [
+        // Shared secret RevenueCat sends in the Authorization header on every
+        // webhook delivery. Configure in the RevenueCat dashboard -> Webhooks.
+        'webhook_auth_header' => env('REVENUECAT_WEBHOOK_AUTH_HEADER'),
+    ],
 ];

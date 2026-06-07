@@ -91,4 +91,5 @@ Route::group([], function () {
     Route::post('webhooks/apple-notifications', 'Webhooks\AppleNotificationsController@handle');
     Route::post('webhooks/google-rtdn', 'Webhooks\GoogleRtdnController@handle');
     Route::post('webhooks/cloudflare-stream', 'Webhooks\CloudflareStreamController@handle');
+    Route::post('webhooks/revenuecat', 'Webhooks\RevenueCatWebhookController@handle');
 });
