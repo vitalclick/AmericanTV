@@ -7,10 +7,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../api/api_exception.dart';
 import '../../../api/dio_client.dart';
+import '../../../core/env.dart';
 import '../../../core/services/cache_service.dart';
+import '../../auth/data/token_storage.dart';
+import 'background_upload_channel.dart';
 
 final uploadRepositoryProvider = Provider<UploadRepository>((ref) {
-  return UploadRepository(ref.read(dioProvider), ref.read(cacheServiceProvider));
+  return UploadRepository(
+    ref.read(dioProvider),
+    ref.read(cacheServiceProvider),
+    ref.read(backgroundUploadChannelProvider),
+    ref.read(tokenStorageProvider),
+  );
 });
 
 /// State for one in-flight upload. Persisted to the cache between resumes
@@ -57,9 +65,11 @@ class UploadJob {
 }
 
 class UploadRepository {
-  UploadRepository(this._dio, this._cache);
+  UploadRepository(this._dio, this._cache, this._bg, this._tokenStorage);
   final Dio _dio;
   final CacheService _cache;
+  final BackgroundUploadChannel _bg;
+  final TokenStorage _tokenStorage;
 
   static const _chunkSize = 5 * 1024 * 1024;
   static const _activeJobKey = 'cache:upload:active';
@@ -141,14 +151,39 @@ class UploadRepository {
     Set<int> alreadyPresent,
     void Function(double progress)? onProgress,
   ) async {
-    final raf = await file.open();
     final size = await file.length();
+    onProgress?.call(alreadyPresent.length / job.totalChunks);
+
+    final pending = [
+      for (var i = 0; i < job.totalChunks; i++)
+        if (!alreadyPresent.contains(i)) i,
+    ];
+
+    if (_bg.isSupported) {
+      await _driveViaPlatform(job, size, pending, onProgress);
+    } else {
+      await _driveInline(job, file, size, pending, onProgress);
+    }
+
+    final videoId = await _merge(job);
+    if (job.title != null && job.title!.isNotEmpty) {
+      await _submitDetails(videoId: videoId, title: job.title!);
+    }
+    await clearActiveJob();
+    return videoId;
+  }
+
+  Future<void> _driveInline(
+    UploadJob job,
+    File file,
+    int size,
+    List<int> pending,
+    void Function(double progress)? onProgress,
+  ) async {
+    final raf = await file.open();
     try {
-      onProgress?.call(alreadyPresent.length / job.totalChunks);
-
-      for (var index = 0; index < job.totalChunks; index++) {
-        if (alreadyPresent.contains(index)) continue;
-
+      var doneCount = job.totalChunks - pending.length;
+      for (final index in pending) {
         final start = index * _chunkSize;
         final end = ((index + 1) * _chunkSize).clamp(0, size);
         final length = end - start;
@@ -173,17 +208,87 @@ class UploadRepository {
           throw ApiException.fromDio(e);
         }
 
-        onProgress?.call((index + 1) / job.totalChunks);
+        doneCount++;
+        onProgress?.call(doneCount / job.totalChunks);
       }
-
-      final videoId = await _merge(job);
-      if (job.title != null && job.title!.isNotEmpty) {
-        await _submitDetails(videoId: videoId, title: job.title!);
-      }
-      await clearActiveJob();
-      return videoId;
     } finally {
       await raf.close();
+    }
+  }
+
+  /// Dispatch each chunk through the native channel and wait for the
+  /// platform to report completed. We don't actually exit early — even on
+  /// iOS, where the upload survives a backgrounding, the publish step
+  /// after merge needs the app foregrounded. The future resolves once
+  /// every chunk is acknowledged.
+  Future<void> _driveViaPlatform(
+    UploadJob job,
+    int size,
+    List<int> pending,
+    void Function(double progress)? onProgress,
+  ) async {
+    if (pending.isEmpty) return;
+    final token = await _tokenStorage.read();
+    if (token == null || token.isEmpty) {
+      throw const ApiException(message: 'Not signed in.');
+    }
+
+    final endpoint = '${Env.apiBaseUrl}/me/videos/chunk';
+    final headers = {
+      'Authorization': 'Bearer $token',
+      'Accept':        'application/json',
+    };
+
+    final remaining = <int>{...pending};
+    final completer = Completer<void>();
+    final sub = _bg.events().listen((event) {
+      if (event.uniqueId != job.uniqueId) return;
+      switch (event.kind) {
+        case 'completed':
+          remaining.remove(event.index);
+          final done = job.totalChunks - remaining.length;
+          onProgress?.call(done / job.totalChunks);
+          if (remaining.isEmpty && !completer.isCompleted) {
+            completer.complete();
+          }
+          break;
+        case 'failed':
+          if (!completer.isCompleted) {
+            completer.completeError(ApiException(
+              message: event.error ?? 'Background upload failed.',
+            ));
+          }
+          break;
+        case 'progress':
+        default:
+          break;
+      }
+    });
+
+    try {
+      for (final index in pending) {
+        final start = index * _chunkSize;
+        final end = ((index + 1) * _chunkSize).clamp(0, size);
+        await _bg.scheduleChunk(
+          uniqueId:    job.uniqueId,
+          index:       index,
+          filePath:    job.localPath,
+          offset:      start,
+          length:      end - start,
+          endpointUrl: endpoint,
+          headers:     headers,
+          formFields:  {
+            'extension': job.extension,
+            'fileName':  job.fileName,
+            'uniqueId':  job.uniqueId,
+            'index':     '$index',
+            if (job.isShorts) 'shorts': '1',
+          },
+        );
+      }
+      await completer.future;
+    } finally {
+      await sub.cancel();
     }
   }
 
