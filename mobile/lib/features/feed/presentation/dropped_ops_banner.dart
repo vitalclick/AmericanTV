@@ -14,13 +14,31 @@ class DroppedOpsBanner extends ConsumerStatefulWidget {
   ConsumerState<DroppedOpsBanner> createState() => _DroppedOpsBannerState();
 }
 
-class _DroppedOpsBannerState extends ConsumerState<DroppedOpsBanner> {
+class _DroppedOpsBannerState extends ConsumerState<DroppedOpsBanner>
+    with WidgetsBindingObserver {
   List<DroppedComment>? _ops;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _load();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Resuming from background — a flushPending may have just dropped new
+    // ops while we were away. Re-read the cache so the banner reflects them
+    // without the user having to fully cold-start.
+    if (state == AppLifecycleState.resumed) {
+      _load();
+    }
   }
 
   Future<void> _load() async {

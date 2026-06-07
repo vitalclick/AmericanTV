@@ -6,7 +6,6 @@ import 'package:go_router/go_router.dart';
 import '../../../core/services/analytics_service.dart';
 import '../application/feed_controller.dart';
 import '../domain/video_summary.dart';
-import 'dropped_ops_banner.dart';
 
 class FeedScreen extends ConsumerStatefulWidget {
   const FeedScreen({super.key});
@@ -57,41 +56,34 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
       return const _FeedEmpty();
     }
 
-    return Column(
-      children: [
-        const DroppedOpsBanner(),
-        Expanded(
-          child: RefreshIndicator(
-            onRefresh: () => ref.read(feedControllerProvider.notifier).refresh(),
-            child: ListView.separated(
-              controller: _scroll,
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              itemCount: state.videos.length + (state.hasMore ? 1 : 0),
-              separatorBuilder: (_, __) => const SizedBox(height: 12),
-              itemBuilder: (context, index) {
-                if (index >= state.videos.length) {
-                  return const Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-                  );
-                }
-                final video = state.videos[index];
-                return _VideoTile(
-                  video: video,
-                  onTap: () {
-                    ref.read(analyticsServiceProvider).track(
-                      'feed_tile_tap',
-                      videoId: video.id,
-                      payload: {'position': index, 'is_paid': video.isPaid},
-                    );
-                    context.push('/video/${video.slug}');
-                  },
-                );
-              },
-            ),
-          ),
-        ),
-      ],
+    return RefreshIndicator(
+      onRefresh: () => ref.read(feedControllerProvider.notifier).refresh(),
+      child: ListView.separated(
+        controller: _scroll,
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        itemCount: state.videos.length + (state.hasMore ? 1 : 0),
+        separatorBuilder: (_, __) => const SizedBox(height: 12),
+        itemBuilder: (context, index) {
+          if (index >= state.videos.length) {
+            return const Padding(
+              padding: EdgeInsets.all(24),
+              child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+            );
+          }
+          final video = state.videos[index];
+          return _VideoTile(
+            video: video,
+            onTap: () {
+              ref.read(analyticsServiceProvider).track(
+                'feed_tile_tap',
+                videoId: video.id,
+                payload: {'position': index, 'is_paid': video.isPaid},
+              );
+              context.push('/video/${video.slug}');
+            },
+          );
+        },
+      ),
     );
   }
 }
