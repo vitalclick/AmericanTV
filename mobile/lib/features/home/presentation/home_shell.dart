@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/widgets/dropped_ops_banner.dart';
 import '../../auth/application/auth_controller.dart';
-import '../../feed/presentation/dropped_ops_banner.dart';
 import '../../feed/presentation/feed_screen.dart';
 import '../../library/presentation/library_screen.dart';
 import '../../notifications/data/notifications_repository.dart';
