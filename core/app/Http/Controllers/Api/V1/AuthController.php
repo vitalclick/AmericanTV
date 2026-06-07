@@ -9,6 +9,8 @@ use App\Models\AdminNotification;
 use App\Models\PasswordReset;
 use App\Models\User;
 use App\Services\Auth\LoginActivityLogger;
+use App\Services\Auth\SocialIdentity;
+use App\Services\Auth\SocialIdentityVerifier;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -201,15 +203,76 @@ class AuthController extends Controller
         return response()->json([], 204);
     }
 
-    public function socialLogin(string $provider): JsonResponse
+    public function socialLogin(Request $request, string $provider, SocialIdentityVerifier $verifier): JsonResponse
     {
-        // TODO(phase 1): exchange Apple/Google ID token for Sanctum token.
-        // - Apple: verify JWS against keys at https://appleid.apple.com/auth/keys
-        // - Google: verify ID token via Firebase Auth or google-api-php-client.
-        // - Look up existing user by `social_id`/`email`; create one if absent.
-        return response()->json([
-            'message' => "Social login ({$provider}) is not implemented yet.",
-        ], 501);
+        abort_unless(in_array($provider, ['apple', 'google'], true), 404);
+
+        $data = $request->validate([
+            'id_token'    => ['required', 'string'],
+            'nonce'       => ['sometimes', 'nullable', 'string'],
+            'device_name' => ['sometimes', 'nullable', 'string', 'max:64'],
+        ]);
+
+        try {
+            $identity = $provider === 'apple'
+                ? $verifier->verifyApple($data['id_token'], $data['nonce'] ?? null)
+                : $verifier->verifyGoogle($data['id_token']);
+        } catch (\Throwable $e) {
+            throw ValidationException::withMessages(['id_token' => [$e->getMessage()]]);
+        }
+
+        $user = $this->findOrCreateSocialUser($identity);
+
+        if ((int) $user->status === Status::USER_BAN) {
+            abort(403, 'This account has been suspended.');
+        }
+
+        LoginActivityLogger::record($user);
+
+        return $this->authResponse($user, $data['device_name'] ?? null);
+    }
+
+    private function findOrCreateSocialUser(SocialIdentity $identity): User
+    {
+        // Prefer the provider_id binding (web's SocialLogin uses the same key).
+        $user = User::where('provider_id', $identity->providerId)
+            ->where('provider', $identity->provider)
+            ->first();
+        if ($user) {
+            return $user;
+        }
+
+        // If the email is already on a local account, link it. Apple may
+        // withhold the email on subsequent logins (the user gets it once),
+        // so this is best-effort.
+        if ($identity->email) {
+            $user = User::where('email', strtolower($identity->email))->first();
+            if ($user) {
+                $user->provider_id = $identity->providerId;
+                $user->provider    = $identity->provider;
+                $user->save();
+                return $user;
+            }
+        }
+
+        abort_unless((bool) gs('registration'), 403, 'Registration is disabled.');
+        abort_unless($identity->email, 422, 'The provider did not return an email; cannot create account.');
+
+        $user            = new User();
+        $user->email     = strtolower($identity->email);
+        $user->firstname = $identity->firstName ?? 'New';
+        $user->lastname  = $identity->lastName ?? 'User';
+        $user->password  = Hash::make(Str::random(40)); // unusable; user signs in via the provider.
+        $user->provider_id = $identity->providerId;
+        $user->provider    = $identity->provider;
+        $user->ev          = $identity->emailVerified ? Status::VERIFIED : (gs('ev') ? Status::UNVERIFIED : Status::VERIFIED);
+        $user->sv          = gs('sv') ? Status::UNVERIFIED : Status::VERIFIED;
+        $user->kv          = gs('kv') ? Status::NO : Status::YES;
+        $user->ts          = Status::DISABLE;
+        $user->tv          = Status::ENABLE;
+        $user->save();
+
+        return $user;
     }
 
     public function verifyEmail(Request $request): JsonResponse

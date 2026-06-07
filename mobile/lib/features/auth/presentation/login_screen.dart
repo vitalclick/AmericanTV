@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -30,11 +32,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           identifier: _identifier.text.trim(),
           password: _password.text,
         );
-    if (!ok && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(ref.read(authControllerProvider).errorMessage ?? 'Sign-in failed.')),
-      );
-    }
+    if (!ok && mounted) _showError();
+  }
+
+  void _showError() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(ref.read(authControllerProvider).errorMessage ?? 'Sign-in failed.'),
+      ),
+    );
   }
 
   @override
@@ -112,7 +118,45 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             )
                           : const Text('Sign in'),
                     ),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        const Expanded(child: Divider()),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          child: Text('or', style: Theme.of(context).textTheme.bodySmall),
+                        ),
+                        const Expanded(child: Divider()),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    if (Platform.isIOS)
+                      OutlinedButton.icon(
+                        onPressed: state.isWorking
+                            ? null
+                            : () async {
+                                final ok = await ref
+                                    .read(authControllerProvider.notifier)
+                                    .signInWithApple();
+                                if (!ok && mounted) _showError();
+                              },
+                        icon: const Icon(Icons.apple),
+                        label: const Text('Continue with Apple'),
+                      ),
+                    if (Platform.isIOS) const SizedBox(height: 8),
+                    OutlinedButton.icon(
+                      onPressed: state.isWorking
+                          ? null
+                          : () async {
+                              final ok = await ref
+                                  .read(authControllerProvider.notifier)
+                                  .signInWithGoogle();
+                              if (!ok && mounted) _showError();
+                            },
+                      icon: const Icon(Icons.g_mobiledata, size: 28),
+                      label: const Text('Continue with Google'),
+                    ),
+                    const SizedBox(height: 16),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [

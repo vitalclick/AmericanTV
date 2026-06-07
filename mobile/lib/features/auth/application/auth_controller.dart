@@ -2,17 +2,22 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../api/api_exception.dart';
 import '../data/auth_repository.dart';
+import '../data/social_auth_repository.dart';
 import '../domain/auth_state.dart';
 
 final authControllerProvider =
     StateNotifierProvider<AuthController, AuthState>((ref) {
-  return AuthController(ref.read(authRepositoryProvider))..bootstrap();
+  return AuthController(
+    ref.read(authRepositoryProvider),
+    ref.read(socialAuthRepositoryProvider),
+  )..bootstrap();
 });
 
 class AuthController extends StateNotifier<AuthState> {
-  AuthController(this._repo) : super(const AuthState.unknown());
+  AuthController(this._repo, this._social) : super(const AuthState.unknown());
 
   final AuthRepository _repo;
+  final SocialAuthRepository _social;
 
   /// Probe stored credentials on app start. Pushes the user through the
   /// router's redirect immediately rather than blocking on a splash.
@@ -68,6 +73,33 @@ class AuthController extends StateNotifier<AuthState> {
         status: AuthStatus.unauthenticated,
         isWorking: false,
         errorMessage: e.message,
+      );
+      return false;
+    }
+  }
+
+  Future<bool> signInWithApple() => _withSocial(_social.signInWithApple);
+
+  Future<bool> signInWithGoogle() => _withSocial(_social.signInWithGoogle);
+
+  Future<bool> _withSocial(Future Function() action) async {
+    state = state.copyWith(isWorking: true, clearError: true);
+    try {
+      final user = await action();
+      state = AuthState.authenticated(user);
+      return true;
+    } on ApiException catch (e) {
+      state = state.copyWith(
+        status: AuthStatus.unauthenticated,
+        isWorking: false,
+        errorMessage: e.message,
+      );
+      return false;
+    } catch (e) {
+      state = state.copyWith(
+        status: AuthStatus.unauthenticated,
+        isWorking: false,
+        errorMessage: 'Could not complete sign-in.',
       );
       return false;
     }
