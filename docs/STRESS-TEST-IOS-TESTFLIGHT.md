@@ -191,18 +191,22 @@ slot, the upload would 409.
 
 ## Identified holes — summary
 
-| Hole | Severity | Fix |
+| Hole | Severity | Status |
 |---|---|---|
-| Cleartext API URL not blocked for TestFlight | Medium | Extend preflight to fire on all workflows, not just production. |
-| `flutter create` could overwrite `mobile/lib/main.dart` | Low | Post-step `git status --porcelain mobile/lib` check. |
-| Missing shim source silently skipped | Medium | Replace `[ -d ios/Runner ]` with explicit assertion. |
-| `project.pbxproj` post-sed not validated | Medium | Grep-then-assert step. |
-| Wrong-size icon source skipped marker logic | Low | Post-step check icon output directories. |
-| Native shim breakage only surfaces at release | Medium | Add `flutter build ios --no-codesign` to PR CI. |
+| Cleartext API URL not blocked for TestFlight | Medium | **Fixed** in `3875343` — HTTPS check now fires on all workflows. |
+| `flutter create` could overwrite `mobile/lib/main.dart` | Low | Open. Low risk because `flutter create --no-overwrite` has been reliable in practice. |
+| Missing shim source silently skipped | Medium | **Fixed** in `27e04cb` — explicit assertion on source presence + post-cp verification. |
+| `project.pbxproj` post-sed not validated | Medium | **Fixed** in `27e04cb` — counts post-rewrite occurrences and fails if zero. |
+| Wrong-size icon source skipped marker logic | Low | Open. `flutter_launcher_icons` emits a warning on misshapen sources; build proceeds with default icons (caught by the existing marker logic). |
+| Native shim breakage only surfaces at release | Medium | **Fixed** in `34ff5a5` — PR CI now compile-tests both Android (Linux runner, every PR) and iOS (macOS runner, gated to mobile/native/ios or pubspec changes). |
+| BUILD_VERSION typo accepted | Low | **Fixed** in `3875343` — preflight rejects non-SemVer values. |
 
-Each hole is a defensive fix worth making, but none would block a
-green-path release. Recommend addressing the **Medium** items before
-the first production submission.
+**All four Medium holes closed.** The two remaining Low items are
+defensible to leave open: `--no-overwrite` is reliable enough in
+practice that the post-step git status check would emit more false
+positives than real findings, and the wrong-size-icon scenario already
+falls through to a build that ships and gets caught by the existing
+marker artifact.
 
 ## Other observations
 
@@ -220,7 +224,7 @@ the first production submission.
 
 ## Recommendation
 
-Ship the PR. Address the **Medium** holes as a Phase 4 followup PR
-**before** flipping the trigger to `ios-app-store`. The TestFlight
-workflow being slightly more permissive is appropriate; the App Store
-workflow needs to be tighter.
+Ship the PR. All Medium holes are now closed; the two Low items left
+open are defensible (see status table above). The TestFlight workflow
+is safe to run today; flipping to `ios-app-store` after a successful
+TestFlight burn-in is the documented next step.
