@@ -2,15 +2,20 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Constants\Status;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\CommentResource;
 use App\Models\Comment;
+use App\Models\Subscriber;
+use App\Models\User;
 use App\Models\UserNotification;
+use App\Models\UserReaction;
 use App\Models\Video;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\ResourceCollection;
+use Illuminate\Validation\Rule;
 
 /**
  * Engagement endpoints surfaced to the mobile client. Implemented in this PR:
@@ -102,17 +107,131 @@ class EngagementController extends Controller
 
     public function reactToVideo(Request $request, int $videoId): JsonResponse
     {
-        return $this->stub();
+        $data = $request->validate([
+            'is_like' => ['required', Rule::in([0, 1])],
+        ]);
+
+        $video = Video::published()
+            ->public()
+            ->findOrFail($videoId);
+
+        $isLike   = (int) $data['is_like'];
+        $existing = $video->userReactions()
+            ->where('user_id', $request->user()->id)
+            ->first();
+
+        $state = $this->toggleReaction(
+            existing: $existing,
+            isLike: $isLike,
+            create: fn () => UserReaction::create([
+                'user_id'        => $request->user()->id,
+                'video_id'       => $video->id,
+                'video_owner_id' => $video->user_id,
+                'is_like'        => $isLike,
+            ]),
+        );
+
+        return response()->json([
+            'data' => [
+                'user_reaction' => $state, // 1 = like, -1 = dislike, 0 = none
+                'likes'         => $video->userReactions()->where('is_like', Status::YES)->count(),
+                'dislikes'      => $video->userReactions()->where('is_like', Status::NO)->count(),
+            ],
+        ]);
     }
 
     public function reactToComment(Request $request, int $commentId): JsonResponse
     {
-        return $this->stub();
+        $data = $request->validate([
+            'is_like' => ['required', Rule::in([0, 1])],
+        ]);
+
+        $comment  = Comment::findOrFail($commentId);
+        $isLike   = (int) $data['is_like'];
+        $existing = $comment->userReactions()
+            ->where('user_id', $request->user()->id)
+            ->first();
+
+        $state = $this->toggleReaction(
+            existing: $existing,
+            isLike: $isLike,
+            create: fn () => UserReaction::create([
+                'user_id'    => $request->user()->id,
+                'comment_id' => $comment->id,
+                'is_like'    => $isLike,
+            ]),
+        );
+
+        return response()->json([
+            'data' => [
+                'user_reaction' => $state,
+                'likes'         => $comment->userReactions()->where('is_like', Status::YES)->count(),
+                'dislikes'      => $comment->userReactions()->where('is_like', Status::NO)->count(),
+            ],
+        ]);
     }
 
     public function subscribeChannel(Request $request, int $channelId): JsonResponse
     {
-        return $this->stub();
+        $channel = User::active()->findOrFail($channelId);
+
+        if ($channel->id === $request->user()->id) {
+            return response()->json(['message' => "You can't subscribe to your own channel."], 422);
+        }
+
+        $existing = $channel->subscribers()
+            ->where('following_id', $request->user()->id)
+            ->first();
+
+        if ($existing) {
+            $existing->delete();
+            return response()->json([
+                'data' => [
+                    'subscribed'      => false,
+                    'subscriber_count' => $channel->subscribers()->count(),
+                ],
+            ]);
+        }
+
+        $subscriber               = new Subscriber();
+        $subscriber->user_id      = $channel->id;
+        $subscriber->following_id = $request->user()->id;
+        $subscriber->save();
+
+        $notification            = new UserNotification();
+        $notification->user_id   = $channel->id;
+        $notification->title     = $request->user()->fullname . ' subscribed to your channel.';
+        $notification->click_url = urlPath('user.channel');
+        $notification->save();
+
+        return response()->json([
+            'data' => [
+                'subscribed'      => true,
+                'subscriber_count' => $channel->subscribers()->count(),
+            ],
+        ]);
+    }
+
+    /**
+     * Apply the same toggle/swap/remove semantics the web UserController uses:
+     * tapping the same direction twice clears the reaction; tapping the other
+     * direction swaps it; absent => create.
+     *
+     * Returns 1/-1/0 to match the user_reaction shape on VideoDetailResource.
+     */
+    private function toggleReaction(?UserReaction $existing, int $isLike, callable $create): int
+    {
+        if ($existing && (int) $existing->is_like === $isLike) {
+            $existing->delete();
+            return 0;
+        }
+        if ($existing) {
+            $existing->is_like = $isLike;
+            $existing->save();
+            return $isLike === Status::YES ? 1 : -1;
+        }
+        $create();
+        return $isLike === Status::YES ? 1 : -1;
     }
 
     public function listWatchLater(Request $request): JsonResponse

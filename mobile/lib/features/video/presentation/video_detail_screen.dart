@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../api/api_exception.dart';
+import '../data/reactions_repository.dart';
 import '../data/video_repository.dart';
 import '../domain/video_detail.dart';
 import '../domain/video_source.dart';
@@ -105,15 +106,7 @@ class _DetailBody extends ConsumerWidget {
                 ],
               ),
               const SizedBox(height: 16),
-              Row(
-                children: [
-                  _Stat(icon: Icons.thumb_up_outlined, value: detail.likes),
-                  const SizedBox(width: 16),
-                  _Stat(icon: Icons.thumb_down_outlined, value: detail.dislikes),
-                  const SizedBox(width: 16),
-                  _Stat(icon: Icons.comment_outlined, value: detail.comments),
-                ],
-              ),
+              _ReactionBar(detail: detail),
               const Divider(height: 32),
               if (detail.description.isNotEmpty) ...[
                 Text(detail.description),
@@ -161,17 +154,98 @@ class _DetailBody extends ConsumerWidget {
 }
 
 class _Stat extends StatelessWidget {
-  const _Stat({required this.icon, required this.value});
+  const _Stat({required this.icon, required this.value, this.active = false, this.onTap});
   final IconData icon;
   final int value;
+  final bool active;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = active
+        ? Theme.of(context).colorScheme.primary
+        : Theme.of(context).colorScheme.onSurface;
+    final child = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 20, color: color),
+        const SizedBox(width: 4),
+        Text(value.toString(), style: TextStyle(color: color)),
+      ],
+    );
+    if (onTap == null) return child;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+        child: child,
+      ),
+    );
+  }
+}
+
+/// Like / dislike / comment counter row that mutates state locally on tap.
+/// Mirrors the toggle/swap/remove semantics on the backend: tapping the
+/// same direction twice clears the reaction.
+class _ReactionBar extends ConsumerStatefulWidget {
+  const _ReactionBar({required this.detail});
+  final VideoDetail detail;
+
+  @override
+  ConsumerState<_ReactionBar> createState() => _ReactionBarState();
+}
+
+class _ReactionBarState extends ConsumerState<_ReactionBar> {
+  late int _userReaction = widget.detail.userReaction;
+  late int _likes = widget.detail.likes;
+  late int _dislikes = widget.detail.dislikes;
+  bool _busy = false;
+
+  Future<void> _react(int direction) async {
+    if (_busy) return;
+    final isLike = direction == 1 ? 1 : 0;
+    setState(() => _busy = true);
+    try {
+      final state = await ref
+          .read(reactionsRepositoryProvider)
+          .reactToVideo(videoId: widget.detail.summary.id, isLike: isLike);
+      setState(() {
+        _userReaction = state.userReaction;
+        _likes = state.likes;
+        _dislikes = state.dislikes;
+      });
+    } on ApiException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Icon(icon, size: 20),
-        const SizedBox(width: 4),
-        Text(value.toString()),
+        _Stat(
+          icon: _userReaction == 1 ? Icons.thumb_up : Icons.thumb_up_outlined,
+          value: _likes,
+          active: _userReaction == 1,
+          onTap: () => _react(1),
+        ),
+        const SizedBox(width: 8),
+        _Stat(
+          icon: _userReaction == -1 ? Icons.thumb_down : Icons.thumb_down_outlined,
+          value: _dislikes,
+          active: _userReaction == -1,
+          onTap: () => _react(-1),
+        ),
+        const SizedBox(width: 8),
+        _Stat(
+          icon: Icons.comment_outlined,
+          value: widget.detail.comments,
+        ),
       ],
     );
   }
