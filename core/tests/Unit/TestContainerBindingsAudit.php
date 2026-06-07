@@ -7,19 +7,33 @@ use ReflectionClass;
 use Tests\TestCase as AppTestCase;
 
 /**
- * Audit: every external-client class bound via `$this->app->instance(...)`
- * in a test must also appear in TestCase::TEST_ONLY_BINDINGS, so the
- * binding gets forgotten on tearDown and can't leak into the next test.
+ * Audit: every external-client class bound via the container in a test —
+ * via `->instance(...)`, `->bind(...)`, or `->singleton(...)` — must also
+ * appear in TestCase::TEST_ONLY_BINDINGS, so the binding gets forgotten
+ * on tearDown and can't leak into the next test.
  *
- * The check greps the tests/ directory for `app->instance(SomeClass::class
- * ...)` shapes (an admittedly small regex), extracts the FQCN, and asserts
- * the FQCN is in the const list. Either-or: the new external client gets
- * added to the const, or the test author has to argue for an exemption
- * via a comment marker.
+ * Why all three:
+ *   - instance() binds an existing object (the most common shape; what
+ *     ArchiveAnalyticsTest uses).
+ *   - bind() / singleton() bind a factory closure; the resolved object
+ *     still survives across tests under singleton(), and bind() leaves
+ *     the factory itself behind. Both leak.
+ *
+ * The check greps the tests/ directory for any of those shapes, extracts
+ * the FQCN, and asserts the FQCN is in the const list. New external
+ * clients either get added to the const or the test author has to
+ * refactor away from the container binding.
  */
 class TestContainerBindingsAudit extends TestCase
 {
-    public function test_every_app_instance_bound_class_is_in_the_test_only_bindings_list(): void
+    /**
+     * Container binding methods that mark something for later resolution.
+     * Adding `extend()` here would also catch class decorators if we ever
+     * start using them in tests.
+     */
+    private const BINDING_METHODS = ['instance', 'bind', 'singleton'];
+
+    public function test_every_container_bound_class_is_in_the_test_only_bindings_list(): void
     {
         $reflected = new ReflectionClass(AppTestCase::class);
         $registered = $reflected->getConstants()['TEST_ONLY_BINDINGS'] ?? null;
@@ -31,41 +45,42 @@ class TestContainerBindingsAudit extends TestCase
         $testsDir = realpath(__DIR__ . '/..');
         $files = $this->phpFilesUnder($testsDir);
 
+        $methodAlternation = implode('|', self::BINDING_METHODS);
+        $pattern = '/->(' . $methodAlternation . ')\(\s*([A-Za-z0-9_\\\\]+)::class/m';
+
         $bound = [];
         foreach ($files as $file) {
             $source = file_get_contents($file);
 
-            // Match `->instance(SomeClass::class, ...)` and capture the FQCN.
-            if (! preg_match_all(
-                '/->instance\(\s*([A-Za-z0-9_\\\\]+)::class/m',
-                $source,
-                $matches,
-            )) {
+            if (! preg_match_all($pattern, $source, $matches)) {
                 continue;
             }
 
-            foreach ($matches[1] as $fqcn) {
-                // Carry over the source file's use-imports so the FQCN can
-                // be made absolute. The simplest version: if the FQCN
-                // doesn't start with a backslash and the source has
-                // `use FQCN;`, qualify it.
+            // $matches[1] holds the method name, $matches[2] holds the FQCN.
+            foreach ($matches[2] as $i => $fqcn) {
                 $absolute = $this->resolveFqcn($source, $fqcn);
                 if ($absolute === null) continue;
 
-                $bound[$absolute] = ($bound[$absolute] ?? '') . " {$file}";
+                $method = $matches[1][$i];
+                $bound[$absolute] = ($bound[$absolute] ?? '') . " {$file}#{$method}";
             }
         }
 
         $missing = [];
         foreach ($bound as $fqcn => $where) {
-            if (! in_array(ltrim($fqcn, '\\'), array_map(fn ($c) => ltrim($c, '\\'), $registered), true)) {
+            $normalized = ltrim($fqcn, '\\');
+            $normalizedRegistered = array_map(
+                fn ($c) => ltrim($c, '\\'),
+                $registered,
+            );
+            if (! in_array($normalized, $normalizedRegistered, true)) {
                 $missing[$fqcn] = $where;
             }
         }
 
         $this->assertEmpty(
             $missing,
-            "The following classes are bound via \$this->app->instance(...) in tests but\n"
+            "The following classes are bound via the container in tests but\n"
             . "aren't in TestCase::TEST_ONLY_BINDINGS, so a mock from one test will\n"
             . "leak into the next:\n\n"
             . implode(
