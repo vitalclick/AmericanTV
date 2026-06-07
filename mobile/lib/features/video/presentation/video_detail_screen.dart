@@ -8,6 +8,7 @@ import '../../../api/api_exception.dart';
 import '../data/video_repository.dart';
 import '../domain/video_detail.dart';
 import '../domain/video_source.dart';
+import 'comments_section.dart';
 import 'video_player_screen.dart';
 
 final _videoDetailProvider =
@@ -128,6 +129,9 @@ class _DetailBody extends ConsumerWidget {
             ],
           ),
         ),
+        const Divider(height: 32),
+        CommentsSection(videoId: summary.id),
+        const SizedBox(height: 24),
       ],
     );
   }
