@@ -114,3 +114,51 @@ it to the Runner target in Xcode. It is gitignored.
 ```ruby
 platform :ios, '13.0'
 ```
+
+### Background uploads (iOS)
+
+The Swift bridge is checked in at `mobile/native/ios/BackgroundUploadHandler.swift`
+(it would otherwise be wiped by the `ios/` entry in `.gitignore`). After
+`flutter create`:
+
+1. Copy it into the generated `ios/Runner/` directory:
+   ```
+   cp ../native/ios/BackgroundUploadHandler.swift ios/Runner/
+   ```
+2. Open `ios/Runner.xcworkspace`, drag `BackgroundUploadHandler.swift`
+   into the Runner target.
+2. Edit `ios/Runner/AppDelegate.swift`:
+
+   ```swift
+   @main
+   @objc class AppDelegate: FlutterAppDelegate {
+     private var backgroundUploads = BackgroundUploadHandler()
+
+     override func application(
+       _ application: UIApplication,
+       didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
+     ) -> Bool {
+       GeneratedPluginRegistrant.register(with: self)
+       let controller = window?.rootViewController as! FlutterViewController
+       backgroundUploads.register(with: registrar(forPlugin: "BackgroundUploadHandler")!)
+       return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+     }
+
+     override func application(
+       _ application: UIApplication,
+       handleEventsForBackgroundURLSession identifier: String,
+       completionHandler: @escaping () -> Void
+     ) {
+       backgroundUploads.handleEventsForBackgroundURLSession(
+         identifier: identifier, completionHandler: completionHandler)
+     }
+   }
+   ```
+
+3. In `Info.plist`, add `UIBackgroundModes` containing `fetch` — required
+   so iOS will wake us briefly to fire delegate callbacks when uploads
+   complete out-of-process.
+
+Without the wiring above, the Dart side falls through cleanly to the
+in-process upload (wakelock + progress notification), so the feature
+degrades gracefully.

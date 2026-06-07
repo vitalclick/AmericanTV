@@ -19,12 +19,13 @@ lib/api/generated/
 *.freezed.dart
 
 # Platform projects — regenerate with `flutter create .`
-android/
-ios/
-web/
-macos/
-linux/
-windows/
+# Anchored to repo root so checked-in shims under native/ios/ aren't matched.
+/android/
+/ios/
+/web/
+/macos/
+/linux/
+/windows/
 
 # Env + secrets
 .env
