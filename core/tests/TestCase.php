@@ -2,10 +2,21 @@
 
 namespace Tests;
 
+use Aws\S3\S3Client;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 
 abstract class TestCase extends BaseTestCase
 {
+    /**
+     * Bindings we explicitly forget between tests so a mock from one test
+     * can't leak into the next. Currently this is just S3Client, but the
+     * list is meant to grow — keeping it as a const makes the audit trail
+     * obvious whenever someone adds another container-resolved external.
+     */
+    private const TEST_ONLY_BINDINGS = [
+        S3Client::class,
+    ];
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -17,6 +28,21 @@ abstract class TestCase extends BaseTestCase
             $this->installGsStub();
             app()->instance('gs.test_stub_installed', true);
         }
+    }
+
+    protected function tearDown(): void
+    {
+        // Forget any test-only bindings the previous test may have left
+        // behind. Without this a PHPUnit::createMock(S3Client::class) bound
+        // via $this->app->instance() in test A would still resolve in test
+        // B and silently absorb production-path PutObject calls.
+        foreach (self::TEST_ONLY_BINDINGS as $abstract) {
+            if (app()->bound($abstract)) {
+                app()->forgetInstance($abstract);
+            }
+        }
+
+        parent::tearDown();
     }
 
     protected function createApplication()
