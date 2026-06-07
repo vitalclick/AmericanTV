@@ -17,6 +17,12 @@ class DroppedOpsBanner extends ConsumerStatefulWidget {
 class _DroppedOpsBannerState extends ConsumerState<DroppedOpsBanner>
     with WidgetsBindingObserver {
   List<DroppedComment>? _ops;
+  DateTime _lastLoadedAt = DateTime.fromMicrosecondsSinceEpoch(0);
+
+  /// Two rapid app-resumes (e.g. an OAuth bounce or a notification preview
+  /// peek) shouldn't trigger two cache reads. 1 second is enough to coalesce
+  /// platform-level bounces without making the banner perceptibly stale.
+  static const _resumeDebounce = Duration(seconds: 1);
 
   @override
   void initState() {
@@ -34,14 +40,16 @@ class _DroppedOpsBannerState extends ConsumerState<DroppedOpsBanner>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     // Resuming from background — a flushPending may have just dropped new
-    // ops while we were away. Re-read the cache so the banner reflects them
-    // without the user having to fully cold-start.
+    // ops while we were away. Re-read the cache (with debouncing) so the
+    // banner reflects them without the user having to fully cold-start.
     if (state == AppLifecycleState.resumed) {
+      if (DateTime.now().difference(_lastLoadedAt) < _resumeDebounce) return;
       _load();
     }
   }
 
   Future<void> _load() async {
+    _lastLoadedAt = DateTime.now();
     final ops = await ref.read(commentRepositoryProvider).droppedOps();
     if (mounted) setState(() => _ops = ops);
   }
