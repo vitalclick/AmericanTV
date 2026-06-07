@@ -8,6 +8,7 @@ import '../features/auth/presentation/forgot_password_screen.dart';
 import '../features/auth/presentation/login_screen.dart';
 import '../features/auth/presentation/register_screen.dart';
 import '../features/home/presentation/home_shell.dart';
+import '../features/video/presentation/video_detail_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
   final auth = ref.watch(authControllerProvider);
@@ -42,6 +43,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/forgot-password',
         builder: (_, __) => const ForgotPasswordScreen(),
+      ),
+      GoRoute(
+        path: '/video/:slug',
+        builder: (_, state) => VideoDetailScreen(slug: state.pathParameters['slug']!),
       ),
     ],
   );

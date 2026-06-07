@@ -2,19 +2,27 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../auth/application/auth_controller.dart';
+import '../../feed/presentation/feed_screen.dart';
 
-/// Placeholder shell shown after successful auth. The real video feed,
-/// search, library, and profile tabs will plug in here as Phase 1 ships.
-class HomeShell extends ConsumerWidget {
+/// Tabbed shell shown after login. The feed is the only real tab today;
+/// the rest are placeholders that ship in subsequent Phase 1 PRs.
+class HomeShell extends ConsumerStatefulWidget {
   const HomeShell({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final user = ref.watch(authControllerProvider).user;
+  ConsumerState<HomeShell> createState() => _HomeShellState();
+}
 
+class _HomeShellState extends ConsumerState<HomeShell> {
+  int _tab = 0;
+
+  static const _titles = ['Home', 'Search', 'Library', 'Profile'];
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('AmericanTV'),
+        title: Text(_titles[_tab]),
         actions: [
           IconButton(
             tooltip: 'Sign out',
@@ -23,32 +31,44 @@ class HomeShell extends ConsumerWidget {
           ),
         ],
       ),
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.play_circle_outline, size: 96),
-              const SizedBox(height: 16),
-              Text(
-                'Signed in as ${user?.displayName ?? '—'}',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                user?.email ?? '',
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-              const SizedBox(height: 32),
-              Text(
-                'The video feed lands here in Phase 1.',
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ],
-          ),
-        ),
+      body: IndexedStack(
+        index: _tab,
+        children: const [
+          FeedScreen(),
+          _PlaceholderTab(label: 'Search', icon: Icons.search),
+          _PlaceholderTab(label: 'Library', icon: Icons.video_library_outlined),
+          _PlaceholderTab(label: 'Profile', icon: Icons.person_outline),
+        ],
+      ),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _tab,
+        onDestinationSelected: (i) => setState(() => _tab = i),
+        destinations: const [
+          NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: 'Home'),
+          NavigationDestination(icon: Icon(Icons.search), label: 'Search'),
+          NavigationDestination(icon: Icon(Icons.video_library_outlined), selectedIcon: Icon(Icons.video_library), label: 'Library'),
+          NavigationDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: 'Profile'),
+        ],
+      ),
+    );
+  }
+}
+
+class _PlaceholderTab extends StatelessWidget {
+  const _PlaceholderTab({required this.label, required this.icon});
+  final String label;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, size: 64),
+          const SizedBox(height: 8),
+          Text('$label — coming soon'),
+        ],
       ),
     );
   }
