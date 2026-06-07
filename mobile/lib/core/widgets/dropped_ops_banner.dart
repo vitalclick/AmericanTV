@@ -125,7 +125,7 @@ class _DroppedOpsBannerState extends ConsumerState<DroppedOpsBanner>
                         child: Text('Comments',
                             style: Theme.of(context).textTheme.titleMedium),
                       ),
-                      TextButton(
+                      TextButton.icon(
                         onPressed: () async {
                           await _dismissComments();
                           // If both sections are now empty, close the sheet.
@@ -138,7 +138,8 @@ class _DroppedOpsBannerState extends ConsumerState<DroppedOpsBanner>
                             }
                           }
                         },
-                        child: const Text('Dismiss comments'),
+                        icon: const Icon(Icons.close, size: 16),
+                        label: const Text('Dismiss'),
                       ),
                     ],
                   ),
@@ -162,7 +163,7 @@ class _DroppedOpsBannerState extends ConsumerState<DroppedOpsBanner>
                         child: Text('Watch later',
                             style: Theme.of(context).textTheme.titleMedium),
                       ),
-                      TextButton(
+                      TextButton.icon(
                         onPressed: () async {
                           await _dismissWatchLater();
                           if (sheetCtx.mounted) {
@@ -173,7 +174,8 @@ class _DroppedOpsBannerState extends ConsumerState<DroppedOpsBanner>
                             }
                           }
                         },
-                        child: const Text('Dismiss watch-later'),
+                        icon: const Icon(Icons.close, size: 16),
+                        label: const Text('Dismiss'),
                       ),
                     ],
                   ),
@@ -192,12 +194,13 @@ class _DroppedOpsBannerState extends ConsumerState<DroppedOpsBanner>
                 const SizedBox(height: 12),
                 Align(
                   alignment: Alignment.centerRight,
-                  child: TextButton(
+                  child: TextButton.icon(
                     onPressed: () async {
                       await _dismissAll();
                       if (sheetCtx.mounted) Navigator.of(sheetCtx).pop();
                     },
-                    child: const Text('Dismiss all'),
+                    icon: const Icon(Icons.clear_all, size: 18),
+                    label: const Text('Dismiss all'),
                   ),
                 ),
               ],
