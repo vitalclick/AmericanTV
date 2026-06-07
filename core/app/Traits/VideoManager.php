@@ -253,7 +253,19 @@ trait VideoManager
             );
         }
 
-        File::delete($mergedFilePath);
+        // If Cloudflare Stream is configured, hand the merged file off so we
+        // get HLS + adaptive bitrate + CDN delivery. The job removes the temp
+        // file when it's done; if Stream isn't configured we delete it inline
+        // as before.
+        if (config('stream.providers.cloudflare.api_token') && !$uploadVideo->is_shorts_video) {
+            \App\Jobs\UploadVideoToStream::dispatch(
+                videoId: $uploadVideo->id,
+                localPath: $mergedFilePath,
+                cleanupAfter: true,
+            );
+        } else {
+            File::delete($mergedFilePath);
+        }
 
 
         return response()->json([
