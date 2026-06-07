@@ -12,6 +12,7 @@ use App\Models\WatchLater;
 use Database\Seeders\AppReviewDemoSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 /**
@@ -117,6 +118,23 @@ class AppReviewDemoSeederTest extends TestCase
         $this->assertSame(
             0,
             PurchasedPlan::where('user_id', $user->id)->count(),
+        );
+    }
+
+    public function test_refreshes_users_last_login_when_the_column_exists(): void
+    {
+        if (! Schema::hasColumn('users', 'last_login')) {
+            $this->markTestSkipped('users.last_login column not in this schema.');
+        }
+
+        $this->seedFixtures();
+        Artisan::call('db:seed', ['--class' => AppReviewDemoSeeder::class]);
+
+        $user = User::where('email', 'appreview@americantv.vip')->first();
+        $this->assertNotNull($user->last_login);
+        $this->assertTrue(
+            \Illuminate\Support\Carbon::parse($user->last_login)->isToday(),
+            'users.last_login should be stamped today',
         );
     }
 

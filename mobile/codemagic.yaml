@@ -23,15 +23,26 @@ definitions:
     cocoapods: default
 
   base_scripts: &base_scripts
+    - name: Preflight — verify env vars
+      # Sanity-check the env group BEFORE we spend 20 minutes building
+      # only to die at the publish step. WORKFLOW (or CM_WORKFLOW_ID,
+      # which Codemagic sets automatically) gates which vars are
+      # required: TestFlight tolerates a missing Firebase config; App
+      # Store doesn't.
+      script: |
+        chmod +x $CM_BUILD_DIR/mobile/scripts/codemagic-preflight.sh
+        $CM_BUILD_DIR/mobile/scripts/codemagic-preflight.sh
+
     - name: Show Flutter + Dart versions
       script: |
         flutter --version
         dart --version
 
-    - name: Materialize platform projects
-      # The android/ and ios/ directories aren't in version control; flutter
-      # create generates them deterministically, then we layer the native
-      # shim files on top. See mobile/docs/platform-setup.md.
+    - name: Ensure platform projects exist
+      # The android/ and ios/ directories ARE in version control from
+      # 3.0.0+14 onward, so this is a safety net for fresh clones or
+      # platform additions. --no-overwrite means existing files are
+      # untouched; flutter only creates what's missing.
       script: |
         cd $CM_BUILD_DIR/mobile
         flutter create . \
@@ -41,18 +52,43 @@ definitions:
           --no-overwrite
 
     - name: Layer native shims into the generated projects
+      # Explicit assertions in both directions: the shim source must be
+      # present in the repo, AND the target platform project must have
+      # been materialized by `flutter create` above. Either missing is
+      # a configuration error worth surfacing loudly — a silent skip
+      # would let the build succeed with background-upload functionality
+      # disabled.
       script: |
         cd $CM_BUILD_DIR/mobile
+
         # iOS background upload handler.
         if [ -d ios/Runner ]; then
+          if [ ! -f native/ios/BackgroundUploadHandler.swift ]; then
+            echo "FATAL: native/ios/BackgroundUploadHandler.swift missing in repo." >&2
+            echo "The branch is likely stale — re-merge main." >&2
+            exit 1
+          fi
           cp native/ios/BackgroundUploadHandler.swift ios/Runner/
+          if [ ! -f ios/Runner/BackgroundUploadHandler.swift ]; then
+            echo "FATAL: cp succeeded but ios/Runner/BackgroundUploadHandler.swift not present." >&2
+            exit 1
+          fi
         fi
+
         # Android background upload Kotlin shim — package matches the
         # applicationId (com.americantv.app.upload).
         if [ -d android/app/src/main/kotlin ]; then
+          if [ ! -f native/android/BackgroundUploadHandler.kt ]; then
+            echo "FATAL: native/android/BackgroundUploadHandler.kt missing in repo." >&2
+            exit 1
+          fi
           mkdir -p android/app/src/main/kotlin/com/americantv/app/upload
           cp native/android/BackgroundUploadHandler.kt \
              android/app/src/main/kotlin/com/americantv/app/upload/
+          if [ ! -f android/app/src/main/kotlin/com/americantv/app/upload/BackgroundUploadHandler.kt ]; then
+            echo "FATAL: Kotlin shim cp failed." >&2
+            exit 1
+          fi
         fi
 
     - name: Copy iOS privacy manifest + entitlements
@@ -157,14 +193,26 @@ definitions:
       #     production workflows so we never accidentally ship the
       #     Flutter default to the store.
       #   - "true": missing icon source is logged and the build continues
-      #     with the Flutter default. Used by dev / TestFlight smoke runs
-      #     where the design assets aren't always wired up.
+      #     with the Flutter default. Drops a marker file into the
+      #     artifacts so the marker is visible in the Codemagic UI
+      #     without needing to grep the icon step's logs.
       script: |
         cd $CM_BUILD_DIR/mobile
         if [ -f assets/icon/app-icon.png ]; then
           dart run flutter_launcher_icons
+          # Clean up any previous marker if the icons are now in place.
+          rm -f build/.shipped-with-default-icon
         elif [ "$ALLOW_DEFAULT_ICON" = "true" ]; then
           echo "No app-icon.png; ALLOW_DEFAULT_ICON=true — using Flutter's default icon."
+          mkdir -p build
+          cat > build/.shipped-with-default-icon <<MARK
+        Workflow: $CM_WORKFLOW_ID
+        Build: $BUILD_VERSION ($BUILD_NUMBER)
+        Reason: APP_ICON_PNG_B64 was not set; ALLOW_DEFAULT_ICON was true.
+
+        Action: populate APP_ICON_PNG_B64 in the americantv-prod env
+        group before the next release. See CODEMAGIC_SETUP.md.
+        MARK
         else
           echo "FATAL: No app-icon.png and ALLOW_DEFAULT_ICON is not 'true'."
           echo "Either populate APP_ICON_PNG_B64 in the env group OR set"
@@ -179,27 +227,44 @@ definitions:
       #   Android applicationId/namespace: com.americantv.app
       #   iOS    PRODUCT_BUNDLE_IDENTIFIER: com.americantv.userapp
       # Each sed is guarded so the script is safe on either platform-only
-      # workflow.
+      # workflow, AND each sed is post-verified — a successful sed on a
+      # different file format (e.g. Xcode binary plist) would leave a
+      # corrupted file behind without the assert step.
       script: |
         cd $CM_BUILD_DIR/mobile
 
-        if [ -f android/app/build.gradle ]; then
-          sed -i.bak "s/applicationId \"[^\"]*\"/applicationId \"com.americantv.app\"/" \
-            android/app/build.gradle
-          sed -i.bak "s/namespace \"[^\"]*\"/namespace \"com.americantv.app\"/" \
-            android/app/build.gradle
-        fi
-        if [ -f android/app/build.gradle.kts ]; then
-          sed -i.bak "s/applicationId = \"[^\"]*\"/applicationId = \"com.americantv.app\"/" \
-            android/app/build.gradle.kts
-          sed -i.bak "s/namespace = \"[^\"]*\"/namespace = \"com.americantv.app\"/" \
-            android/app/build.gradle.kts
-        fi
+        # Flutter 3.24+ generates Groovy build.gradle using Kotlin-style
+        # `applicationId = "..."` assignments rather than the older
+        # `applicationId "..."` (no equals). Try both with sed; only
+        # one of the two patches lands per file.
+        for GRADLE in android/app/build.gradle android/app/build.gradle.kts; do
+          [ -f "$GRADLE" ] || continue
+          sed -i.bak "s/applicationId = \"[^\"]*\"/applicationId = \"com.americantv.app\"/" "$GRADLE"
+          sed -i.bak "s/applicationId \"[^\"]*\"/applicationId \"com.americantv.app\"/" "$GRADLE"
+          sed -i.bak "s/namespace = \"[^\"]*\"/namespace = \"com.americantv.app\"/" "$GRADLE"
+          sed -i.bak "s/namespace \"[^\"]*\"/namespace \"com.americantv.app\"/" "$GRADLE"
+          # Accept either syntax post-rewrite.
+          grep -qE 'applicationId\s*=?\s*"com\.americantv\.app"' "$GRADLE" || {
+            echo "FATAL: applicationId rewrite failed in $GRADLE." >&2
+            grep "applicationId" "$GRADLE" >&2 || true
+            exit 1
+          }
+        done
 
         if [ -f ios/Runner.xcodeproj/project.pbxproj ]; then
           sed -i.bak \
             "s/PRODUCT_BUNDLE_IDENTIFIER = [^;]*;/PRODUCT_BUNDLE_IDENTIFIER = com.americantv.userapp;/" \
             ios/Runner.xcodeproj/project.pbxproj
+          # Count post-rewrite occurrences — Xcode emits one per build
+          # configuration (typically 3-6). Zero means sed didn't match
+          # (binary plist? old format?); we'd ship the wrong bundle.
+          MATCHES=$(grep -c "PRODUCT_BUNDLE_IDENTIFIER = com.americantv.userapp;" ios/Runner.xcodeproj/project.pbxproj || true)
+          if [ "$MATCHES" -lt 1 ]; then
+            echo "FATAL: PRODUCT_BUNDLE_IDENTIFIER rewrite produced 0 matches." >&2
+            echo "project.pbxproj may be in an unexpected format (binary plist?)." >&2
+            exit 1
+          fi
+          echo "[ids] PRODUCT_BUNDLE_IDENTIFIER set in $MATCHES build configurations."
         fi
 
     - name: Resolve dependencies
@@ -338,6 +403,7 @@ workflows:
     artifacts:
       - mobile/build/ios/ipa/*.ipa
       - mobile/build/ios/archive/**/dSYMs/**
+      - mobile/build/.shipped-with-default-icon
       - /tmp/xcodebuild_logs/*.log
       - mobile/flutter_drive.log
 
@@ -437,6 +503,7 @@ workflows:
     artifacts:
       - mobile/build/ios/ipa/*.ipa
       - mobile/build/ios/archive/**/dSYMs/**
+      - mobile/build/.shipped-with-default-icon
       - /tmp/xcodebuild_logs/*.log
 
     publishing:
@@ -509,6 +576,7 @@ workflows:
     artifacts:
       - mobile/build/app/outputs/bundle/release/app-release.aab
       - mobile/build/app/outputs/mapping/release/mapping.txt
+      - mobile/build/.shipped-with-default-icon
 
     publishing:
       google_play:
@@ -568,6 +636,7 @@ workflows:
     artifacts:
       - mobile/build/app/outputs/bundle/release/app-release.aab
       - mobile/build/app/outputs/mapping/release/mapping.txt
+      - mobile/build/.shipped-with-default-icon
 
     publishing:
       google_play:

@@ -1,7 +1,15 @@
 name: americantv
 description: AmericanTV mobile app (iOS + Android).
 publish_to: none
-version: 0.1.0+1
+# Version contract:
+#   - Marketing version (3.0.0) shows in App Store / Play Store listings.
+#   - Build number (14) is what App Store Connect / Play Console deduplicate
+#     by. Play Store records previous release as version 13 (2.0.2); we're
+#     bumping to 14 for the first cross-platform sync.
+# Codemagic overrides the build number per release (`--build-number=$BUILD_NUMBER`)
+# from App Store Connect's latest + 1, but the floor lives here so a local
+# `flutter build` produces a sane default.
+version: 3.0.0+14
 
 environment:
   sdk: ^3.5.0

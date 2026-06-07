@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android network security config for production. After `flutter create`:
+    cp mobile/native/android/network_security_config.xml \
+       android/app/src/main/res/xml/
+
+  Reference from android/app/src/main/AndroidManifest.xml:
+    <application
+        android:networkSecurityConfig="@xml/network_security_config"
+        ...>
+
+  HTTPS-only by default. The staging override block is commented out;
+  uncomment + tweak the domain if you need HTTP for a non-production
+  Laravel host.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system"/>
+        </trust-anchors>
+    </base-config>
+
+    <!--
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">staging.americantv.vip</domain>
+    </domain-config>
+    -->
+</network-security-config>

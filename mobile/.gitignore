@@ -18,14 +18,38 @@ lib/api/generated/
 *.g.dart
 *.freezed.dart
 
-# Platform projects — regenerate with `flutter create .`
-# Anchored to repo root so checked-in shims under native/ios/ aren't matched.
-/android/
-/ios/
+# Platform projects are now CHECKED IN (3.0.0+14 onward).
+# Rationale: lets us land per-project customizations (Info.plist,
+# entitlements, gradle signing) on the same branch as the Dart change
+# that needs them. Codemagic's `flutter create . --no-overwrite` step
+# is a no-op when these exist; it still runs as a safety net for
+# fresh clones or platform additions.
+#
+# Web / desktop platforms are not supported.
 /web/
 /macos/
 /linux/
 /windows/
+
+# Build outputs from the platform projects themselves.
+android/.gradle/
+android/build/
+android/app/build/
+android/captures/
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+ios/Flutter/flutter_export_environment.sh
+ios/Flutter/Generated.xcconfig
+ios/Runner/GeneratedPluginRegistrant.h
+ios/Runner/GeneratedPluginRegistrant.m
+ios/build/
+
+# Backup files left by sed on the platform-identifier rewrites.
+*.bak
+*.bak2
+*.bak3
 
 # Env + secrets
 .env

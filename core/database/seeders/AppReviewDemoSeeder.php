@@ -12,6 +12,7 @@ use App\Models\WatchLater;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * Creates / refreshes a demo account App Store and Play Store reviewers
@@ -61,6 +62,16 @@ class AppReviewDemoSeeder extends Seeder
         $user->kv        = Status::KYC_VERIFIED;
         $user->ts        = Status::DISABLE; // no 2FA — reviewers can't intercept SMS.
         $user->tv        = Status::ENABLE;
+
+        // Some production schemas track a `last_login` column on users
+        // directly (separate from the UserLogin table). Refreshing it
+        // matters because admin panels sort by it; an "inactive" demo
+        // account looks suspicious to reviewers spot-checking the user
+        // list. Guarded by Schema::hasColumn so installs without the
+        // column don't choke.
+        if (Schema::hasColumn('users', 'last_login')) {
+            $user->last_login = Carbon::now();
+        }
         $user->save();
 
         $this->primeWatchLater($user);

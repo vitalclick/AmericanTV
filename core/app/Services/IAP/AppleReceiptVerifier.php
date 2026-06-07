@@ -172,14 +172,29 @@ class AppleReceiptVerifier
     }
 
     /**
-     * App Store Server API requires an ES256 JWT signed with your in-app purchase key.
-     * Use firebase/php-jwt or lcobucci/jwt in production.
+     * Apple's App Store Server API requires an ES256 JWT signed with the
+     * .p8 private key from App Store Connect → Users and Access → Keys.
+     *   header  { alg: ES256, kid: keyId, typ: JWT }
+     *   payload { iss: issuerId, iat, exp, aud: 'appstoreconnect-v1',
+     *             bid: bundleId }
+     * Token lifetime is capped at 20 minutes per Apple's spec; we use
+     * 10 to keep clock-skew tolerance comfortable.
      */
     private function buildAppStoreServerJwt(): string
     {
-        // TODO(production): sign ES256 JWT with $this->privateKey,
-        // header { alg: ES256, kid: $this->keyId, typ: JWT },
-        // payload { iss: $this->issuerId, iat, exp, aud: 'appstoreconnect-v1', bid: $this->bundleId }.
-        throw new \RuntimeException('JWT signing not implemented in skeleton');
+        $now = time();
+        return JWT::encode(
+            payload: [
+                'iss' => $this->issuerId,
+                'iat' => $now,
+                'exp' => $now + 600,
+                'aud' => 'appstoreconnect-v1',
+                'bid' => $this->bundleId,
+            ],
+            key:   $this->privateKey,
+            alg:   'ES256',
+            keyId: $this->keyId,
+            head:  ['typ' => 'JWT'],
+        );
     }
 }
