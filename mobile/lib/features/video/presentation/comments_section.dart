@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -14,8 +16,28 @@ final _commentsProvider =
 class _CommentsNotifier extends AutoDisposeFamilyAsyncNotifier<List<Comment>, int> {
   @override
   Future<List<Comment>> build(int videoId) async {
-    final page = await ref.read(commentRepositoryProvider).list(videoId);
+    final repo = ref.read(commentRepositoryProvider);
+    // Read-through: render the cached list immediately if any, then race
+    // the live fetch. Failures keep the cached payload on screen via the
+    // try/catch — same pattern the feed + video detail use.
+    final cached = await repo.cachedFirstPage(videoId);
+    if (cached != null && cached.comments.isNotEmpty) {
+      // Kick off the live fetch in the background; let the controller
+      // overwrite state via the awaited path below if/when it lands.
+      unawaited(_refreshInBackground(videoId));
+      return cached.comments;
+    }
+    final page = await repo.list(videoId);
     return page.comments;
+  }
+
+  Future<void> _refreshInBackground(int videoId) async {
+    try {
+      final page = await ref.read(commentRepositoryProvider).list(videoId);
+      state = AsyncData(page.comments);
+    } catch (_) {
+      // Leave the cached state on screen.
+    }
   }
 
   Future<void> post(String body) async {

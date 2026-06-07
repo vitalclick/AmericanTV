@@ -52,6 +52,13 @@ class LibraryRepository {
   }
 
   Future<PaginatedVideos> watchLater({int page = 1}) async {
+    if (page == 1) {
+      // Flush any offline-queued add/removes before the read so the
+      // server's response is already consistent with the user's intent.
+      // Fire-and-forget so it doesn't block the read on a slow operator.
+      // ignore: discarded_futures
+      _flushPendingOps();
+    }
     final result = await _list('/watch-later', page);
     if (page == 1) await _persistList('cache:watch-later:page-1', result);
     return result;
@@ -132,10 +139,19 @@ class LibraryRepository {
     }
   }
 
+  static const _pendingOpsKey = 'cache:watch-later:pending-ops';
+
+  /// Add to watch-later with offline queueing: if the network is down we
+  /// still record the intent locally and replay on next successful fetch.
   Future<void> addWatchLater(int videoId) async {
     try {
       await _dio.post<void>('/watch-later/$videoId');
     } on DioException catch (e) {
+      if (e.type == DioExceptionType.connectionError ||
+          e.type == DioExceptionType.connectionTimeout) {
+        await _enqueuePending('add', videoId);
+        return;
+      }
       throw ApiException.fromDio(e);
     }
   }
@@ -144,8 +160,52 @@ class LibraryRepository {
     try {
       await _dio.delete<void>('/watch-later/$videoId');
     } on DioException catch (e) {
+      if (e.type == DioExceptionType.connectionError ||
+          e.type == DioExceptionType.connectionTimeout) {
+        await _enqueuePending('remove', videoId);
+        return;
+      }
       throw ApiException.fromDio(e);
     }
+  }
+
+  /// Replay any add/remove ops that were queued while the user was offline.
+  /// Called from watchLater(page: 1) so any successful fetch also flushes
+  /// the local intent — no separate background timer needed.
+  Future<void> _flushPendingOps() async {
+    final raw = await _cache.readJson(_pendingOpsKey);
+    final ops = ((raw?['ops'] as List?) ?? const []).cast<Map<String, dynamic>>();
+    if (ops.isEmpty) return;
+
+    final survived = <Map<String, dynamic>>[];
+    for (final op in ops) {
+      final action = op['action'] as String;
+      final videoId = op['video_id'] as int;
+      try {
+        if (action == 'add') {
+          await _dio.post<void>('/watch-later/$videoId');
+        } else {
+          await _dio.delete<void>('/watch-later/$videoId');
+        }
+      } on DioException {
+        survived.add(op);
+      }
+    }
+    if (survived.isEmpty) {
+      await _cache.remove(_pendingOpsKey);
+    } else {
+      await _cache.writeJson(_pendingOpsKey, {'ops': survived});
+    }
+  }
+
+  Future<void> _enqueuePending(String action, int videoId) async {
+    final raw = await _cache.readJson(_pendingOpsKey);
+    final ops = ((raw?['ops'] as List?) ?? const []).cast<Map<String, dynamic>>().toList();
+    // Compact: if the user added then removed (or vice versa) the latest
+    // op wins. Same operation twice collapses to one.
+    ops.removeWhere((existing) => existing['video_id'] == videoId);
+    ops.add({'action': action, 'video_id': videoId});
+    await _cache.writeJson(_pendingOpsKey, {'ops': ops});
   }
 
   Future<void> removeHistory(int videoId) async {

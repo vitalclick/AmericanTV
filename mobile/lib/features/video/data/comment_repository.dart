@@ -3,15 +3,32 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../api/api_exception.dart';
 import '../../../api/dio_client.dart';
+import '../../../core/services/cache_service.dart';
 import '../domain/comment.dart';
 
 final commentRepositoryProvider = Provider<CommentRepository>((ref) {
-  return CommentRepository(ref.read(dioProvider));
+  return CommentRepository(ref.read(dioProvider), ref.read(cacheServiceProvider));
 });
 
 class CommentRepository {
-  CommentRepository(this._dio);
+  CommentRepository(this._dio, this._cache);
   final Dio _dio;
+  final CacheService _cache;
+
+  String _cacheKey(int videoId) => 'cache:comments:$videoId:page-1';
+
+  Future<PaginatedComments?> cachedFirstPage(int videoId) async {
+    final raw = await _cache.readJson(_cacheKey(videoId));
+    if (raw == null) return null;
+    final comments = (raw['data'] as List)
+        .map((e) => Comment.fromJson(e as Map<String, dynamic>))
+        .toList();
+    return PaginatedComments(
+      comments: comments,
+      page: raw['page'] as int? ?? 1,
+      lastPage: raw['last_page'] as int? ?? 1,
+    );
+  }
 
   Future<PaginatedComments> list(int videoId, {int page = 1}) async {
     try {
@@ -24,11 +41,23 @@ class CommentRepository {
           .map((e) => Comment.fromJson(e as Map<String, dynamic>))
           .toList();
       final meta = (body['meta'] as Map?)?.cast<String, dynamic>() ?? const {};
-      return PaginatedComments(
+      final result = PaginatedComments(
         comments: items,
         page: meta['current_page'] as int? ?? 1,
         lastPage: meta['last_page'] as int? ?? 1,
       );
+
+      if (page == 1) {
+        // Stash only the first page — older pages bloat SharedPreferences
+        // and infinite-scroll users rarely cold-launch past page 1 anyway.
+        await _cache.writeJson(_cacheKey(videoId), {
+          'data': items.map((c) => c.toJsonForCache()).toList(),
+          'page': result.page,
+          'last_page': result.lastPage,
+        });
+      }
+
+      return result;
     } on DioException catch (e) {
       throw ApiException.fromDio(e);
     }

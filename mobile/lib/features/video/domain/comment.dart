@@ -62,4 +62,25 @@ class Comment {
       replies: replies ?? this.replies,
     );
   }
+
+  /// Round-trips back through fromJson so the cache layer doesn't need a
+  /// separate serializer per relationship.
+  Map<String, dynamic> toJsonForCache() => {
+        'id': id,
+        'body': body,
+        'parent_id': parentId,
+        'created_at': createdAt.toIso8601String(),
+        'author': author == null
+            ? null
+            : {
+                'id': author!.id,
+                'slug': author!.slug,
+                'name': author!.name,
+                'avatar': author!.avatar,
+              },
+        'reply_count': replyCount,
+        'likes': likes,
+        'user_reaction': userReaction,
+        'replies': replies.map((r) => r.toJsonForCache()).toList(),
+      };
 }
