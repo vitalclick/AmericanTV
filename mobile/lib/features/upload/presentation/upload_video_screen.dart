@@ -7,6 +7,56 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../api/api_exception.dart';
 import '../data/upload_repository.dart';
 
+class _ResumeCard extends StatelessWidget {
+  const _ResumeCard({required this.job, required this.busy, required this.onDiscard});
+  final UploadJob job;
+  final bool busy;
+  final VoidCallback onDiscard;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.history),
+                const SizedBox(width: 8),
+                Text('Resume previous upload',
+                    style: Theme.of(context).textTheme.titleMedium),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              job.fileName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            if (job.title != null && job.title!.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text('Title: ${job.title!}'),
+              ),
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: busy ? null : onDiscard,
+                icon: const Icon(Icons.close, size: 16),
+                label: const Text('Discard'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class UploadVideoScreen extends ConsumerStatefulWidget {
   const UploadVideoScreen({super.key});
 
@@ -21,11 +71,25 @@ class _UploadVideoScreenState extends ConsumerState<UploadVideoScreen> {
   double _progress = 0;
   String? _error;
   int? _resultVideoId;
+  UploadJob? _resumeJob;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkForResume();
+  }
 
   @override
   void dispose() {
     _title.dispose();
     super.dispose();
+  }
+
+  Future<void> _checkForResume() async {
+    final job = await ref.read(uploadRepositoryProvider).activeJob();
+    if (mounted && job != null) {
+      setState(() => _resumeJob = job);
+    }
   }
 
   Future<void> _pickFile() async {
@@ -36,13 +100,14 @@ class _UploadVideoScreenState extends ConsumerState<UploadVideoScreen> {
     if (result == null || result.files.single.path == null) return;
     setState(() {
       _file = File(result.files.single.path!);
+      _resumeJob = null;
       _error = null;
       _resultVideoId = null;
     });
   }
 
   Future<void> _upload() async {
-    if (_file == null) return;
+    if (_file == null && _resumeJob == null) return;
     setState(() {
       _busy = true;
       _progress = 0;
@@ -50,15 +115,26 @@ class _UploadVideoScreenState extends ConsumerState<UploadVideoScreen> {
     });
 
     try {
-      final id = await ref.read(uploadRepositoryProvider).uploadVideo(
-            file: _file!,
-            title: _title.text.trim().isEmpty ? null : _title.text.trim(),
-            onProgress: (p) {
-              if (mounted) setState(() => _progress = p);
-            },
-          );
+      final repo = ref.read(uploadRepositoryProvider);
+      final id = _resumeJob != null
+          ? await repo.resume(
+              _resumeJob!,
+              onProgress: (p) {
+                if (mounted) setState(() => _progress = p);
+              },
+            )
+          : await repo.startUpload(
+              file: _file!,
+              title: _title.text.trim().isEmpty ? null : _title.text.trim(),
+              onProgress: (p) {
+                if (mounted) setState(() => _progress = p);
+              },
+            );
       if (mounted) {
-        setState(() => _resultVideoId = id);
+        setState(() {
+          _resultVideoId = id;
+          _resumeJob = null;
+        });
       }
     } on ApiException catch (e) {
       if (mounted) setState(() => _error = e.message);
@@ -67,6 +143,11 @@ class _UploadVideoScreenState extends ConsumerState<UploadVideoScreen> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  Future<void> _discardResume() async {
+    await ref.read(uploadRepositoryProvider).clearActiveJob();
+    if (mounted) setState(() => _resumeJob = null);
   }
 
   @override
@@ -79,7 +160,13 @@ class _UploadVideoScreenState extends ConsumerState<UploadVideoScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              if (_file == null)
+              if (_resumeJob != null && _file == null)
+                _ResumeCard(
+                  job: _resumeJob!,
+                  busy: _busy,
+                  onDiscard: _discardResume,
+                )
+              else if (_file == null)
                 _PickerArea(onTap: _pickFile)
               else
                 _SelectedFile(

@@ -312,6 +312,46 @@ class MeController extends Controller
             ->detailsSubmit($request, $id);
     }
 
+    /**
+     * Returns which chunk indices have already been received for a given
+     * uploader-supplied uniqueId. Lets the mobile client resume after
+     * background pause or network drop without re-sending everything.
+     */
+    public function inventoryUploadChunks(Request $request, string $uniqueId): JsonResponse
+    {
+        $request->validate([
+            'file_name' => ['required', 'string', 'max:255'],
+        ]);
+
+        // uniqueId can only contain safe characters — prevents path traversal.
+        if (! preg_match('/^[A-Za-z0-9_\-]{8,64}$/', $uniqueId)) {
+            return response()->json(['message' => 'Invalid uniqueId'], 422);
+        }
+
+        $fileName = basename($request->query('file_name') ?: $request->input('file_name'));
+        $tempDir  = storage_path("app/temp/{$uniqueId}");
+
+        $present = [];
+        if (is_dir($tempDir)) {
+            $pattern = "{$tempDir}/{$fileName}.part";
+            foreach (glob($pattern . '*') ?: [] as $path) {
+                $suffix = substr($path, strlen($pattern));
+                if (is_numeric($suffix)) {
+                    $present[] = (int) $suffix;
+                }
+            }
+            sort($present);
+        }
+
+        return response()->json([
+            'data' => [
+                'unique_id'      => $uniqueId,
+                'file_name'      => $fileName,
+                'chunks_present' => $present,
+            ],
+        ]);
+    }
+
     public function registerDeviceToken(Request $request): JsonResponse
     {
         $data = $request->validate([

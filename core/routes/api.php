@@ -90,9 +90,10 @@ Route::group([], function () {
 
         // Creator uploads — bridges to VideoController which owns the
         // chunked merge + FFMpeg pipeline.
-        Route::post('me/videos/chunk',          'MeController@uploadVideoChunk');
-        Route::post('me/videos/merge',          'MeController@mergeVideoChunks');
-        Route::patch('me/videos/{id}/details',  'MeController@submitVideoDetails');
+        Route::get('me/videos/chunks/{uniqueId}', 'MeController@inventoryUploadChunks');
+        Route::post('me/videos/chunk',            'MeController@uploadVideoChunk');
+        Route::post('me/videos/merge',            'MeController@mergeVideoChunks');
+        Route::patch('me/videos/{id}/details',    'MeController@submitVideoDetails');
 
         // Purchases — the only mobile purchase entrypoint.
         Route::post('purchases/iap/verify', 'IapPurchaseController@verify');
