@@ -230,6 +230,10 @@
 @endsection
 
 @push('breadcrumb-plugins')
+    <a href="{{ route('admin.videos.watch.summary', $video->id) }}"
+       class="btn btn-sm btn-outline--primary me-2">
+        <i class="las la-chart-line"></i> @lang('Watch summary')
+    </a>
     <x-back route="{{ route('admin.videos.index') }}" />
 @endpush
 

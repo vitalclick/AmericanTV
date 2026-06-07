@@ -84,6 +84,7 @@
                                             <div class="button--group">
                                                 <a href="{{ route('admin.videos.edit', @$video->id) }}" class="btn btn-outline--primary btn-sm"><i class="la la-pencil"></i>@lang('Edit')</a>
                                                 <a href="@if ($video->status != Status::YES) javascript:void(0) @else{{ route('admin.videos.analytics', @$video->id) }} @endif" class="btn btn-outline--info btn-sm @if ($video->status != Status::YES) disabled @endif"><i class="las la-chart-pie"></i>@lang('Analytics')</a>
+                                                <a href="{{ route('admin.videos.watch.summary', @$video->id) }}" class="btn btn-outline--secondary btn-sm" title="@lang('Mobile-app watch summary')"><i class="las la-chart-line"></i>@lang('Watch')</a>
                                             </div>
                                         </td>
 
