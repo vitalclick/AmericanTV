@@ -15,6 +15,36 @@ use Illuminate\Support\Facades\Route;
 */
 
 Route::group([], function () {
+    // -------------------- Root --------------------
+    // Hitting /api/v1 directly returns service info — a tiny humans-and-
+    // monitoring affordance. Without it, a curl at the prefix returns
+    // Laravel's "route not found" which reads to operators like the
+    // server is broken even though it isn't.
+    Route::get('/', function () {
+        return response()->json([
+            'service'    => 'americantv-api',
+            'version'    => 'v1',
+            'spec'       => url('/api/v1/openapi.yaml'),
+            'status'     => 'ok',
+            'time'       => now()->toIso8601String(),
+            'docs'       => 'https://github.com/vitalclick/AmericanTV/blob/main/core/docs/api/openapi-v1.yaml',
+        ]);
+    });
+
+    // Serves the OpenAPI YAML directly so mobile / partner integrators
+    // can codegen without leaving the API host. The actual file lives
+    // in core/docs/api/ which is outside public/, so we stream it here.
+    Route::get('openapi.yaml', function () {
+        $path = base_path('docs/api/openapi-v1.yaml');
+        if (! file_exists($path)) {
+            return response()->json(['message' => 'spec not deployed'], 404);
+        }
+        return response()->file($path, [
+            'Content-Type'  => 'application/yaml',
+            'Cache-Control' => 'public, max-age=300',
+        ]);
+    });
+
     // -------------------- Public --------------------
     Route::prefix('auth')->group(function () {
         Route::post('register', 'AuthController@register');
