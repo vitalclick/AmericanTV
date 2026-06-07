@@ -5,6 +5,7 @@ import '../../auth/application/auth_controller.dart';
 import '../../wallet/presentation/wallet_screen.dart';
 import 'change_password_screen.dart';
 import 'edit_profile_screen.dart';
+import 'two_factor_screens.dart';
 import 'verify_code_screen.dart';
 
 class ProfileScreen extends ConsumerWidget {
@@ -63,6 +64,19 @@ class ProfileScreen extends ConsumerWidget {
           trailing: const Icon(Icons.chevron_right),
           onTap: () => Navigator.of(context).push(
             MaterialPageRoute<void>(builder: (_) => const ChangePasswordScreen()),
+          ),
+        ),
+        ListTile(
+          leading: const Icon(Icons.shield_outlined),
+          title: const Text('Two-factor authentication'),
+          subtitle: Text(user.twoFactorEnabled ? 'On' : 'Off'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => user.twoFactorEnabled
+                  ? const TwoFactorDisableScreen()
+                  : const TwoFactorSetupScreen(),
+            ),
           ),
         ),
         if (!user.emailVerified)

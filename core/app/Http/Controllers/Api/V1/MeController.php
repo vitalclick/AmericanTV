@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Constants\Status;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\UserResource;
+use App\Lib\GoogleAuthenticator;
 use App\Models\DeviceToken;
 use App\Models\Transaction;
 use App\Models\UserNotification;
@@ -208,6 +209,78 @@ class MeController extends Controller
         UserNotification::where('user_id', $request->user()->id)
             ->where('is_read', Status::NO)
             ->update(['is_read' => Status::YES]);
+        return response()->json([], 204);
+    }
+
+    /**
+     * Generates a fresh TOTP secret and returns the otpauth:// URL the mobile
+     * client can render as a QR code. The secret is NOT persisted yet — only
+     * the verify call commits it, so an abandoned enrollment doesn't lock
+     * the user out.
+     */
+    public function init2fa(Request $request): JsonResponse
+    {
+        $ga     = new GoogleAuthenticator();
+        $secret = $ga->createSecret();
+
+        $label  = $request->user()->username ?: $request->user()->email;
+        $issuer = rawurlencode((string) (gs('site_name') ?? 'AmericanTV'));
+        $otpauth = sprintf(
+            'otpauth://totp/%s:%s?secret=%s&issuer=%s',
+            $issuer,
+            rawurlencode($label),
+            $secret,
+            $issuer,
+        );
+
+        return response()->json([
+            'data' => [
+                'secret'   => $secret,
+                'otpauth'  => $otpauth,
+                'issuer'   => gs('site_name') ?? 'AmericanTV',
+                'label'    => $label,
+            ],
+        ]);
+    }
+
+    public function enable2fa(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'secret' => ['required', 'string', 'size:16'],
+            'code'   => ['required', 'string', 'size:6'],
+        ]);
+
+        if (! verifyG2fa($request->user(), $data['code'], $data['secret'])) {
+            throw ValidationException::withMessages([
+                'code' => ['Verification code does not match.'],
+            ]);
+        }
+
+        $user = $request->user();
+        $user->tsc = $data['secret'];
+        $user->ts  = Status::ENABLE;
+        $user->save();
+
+        return response()->json([], 204);
+    }
+
+    public function disable2fa(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'code' => ['required', 'string', 'size:6'],
+        ]);
+
+        $user = $request->user();
+        if (! verifyG2fa($user, $data['code'])) {
+            throw ValidationException::withMessages([
+                'code' => ['Verification code does not match.'],
+            ]);
+        }
+
+        $user->tsc = null;
+        $user->ts  = Status::DISABLE;
+        $user->save();
+
         return response()->json([], 204);
     }
 

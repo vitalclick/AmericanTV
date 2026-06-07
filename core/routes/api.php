@@ -83,6 +83,11 @@ Route::group([], function () {
         Route::post('me/device-tokens', 'MeController@registerDeviceToken');
         Route::delete('me/device-tokens', 'MeController@unregisterDeviceToken');
 
+        // TOTP / 2FA enrollment
+        Route::post('me/security/2fa/init',    'MeController@init2fa');
+        Route::post('me/security/2fa/enable',  'MeController@enable2fa');
+        Route::post('me/security/2fa/disable', 'MeController@disable2fa');
+
         // Purchases — the only mobile purchase entrypoint.
         Route::post('purchases/iap/verify', 'IapPurchaseController@verify');
         Route::post('purchases/iap/restore', 'IapPurchaseController@restore');
