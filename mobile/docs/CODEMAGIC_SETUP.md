@@ -3,6 +3,23 @@
 Step-by-step for getting `mobile/codemagic.yaml` to run successfully against
 production stores. Do these once; then the four workflows run unattended.
 
+## Current state (3.0.0+14)
+
+| Artifact | Status |
+|---|---|
+| Marketing version + build number | **3.0.0+14**, set in `mobile/pubspec.yaml` |
+| Platform projects (`mobile/android/`, `mobile/ios/`) | Committed to the repo |
+| App icon masters (`mobile/assets/icon/app-icon.png`, `app-icon-adaptive-foreground.png`) | Committed |
+| Generated launcher icons | Committed under `mobile/ios/.../AppIcon.appiconset/` + `mobile/android/.../mipmap-*` + `drawable-*/` |
+| Native iOS shim (`BackgroundUploadHandler.swift`) | Committed under `mobile/ios/Runner/` |
+| Native Android shim (`BackgroundUploadHandler.kt`) | Committed under `mobile/android/app/src/main/kotlin/com/americantv/app/upload/` |
+| Privacy manifest + entitlements | Committed under `mobile/ios/Runner/` |
+| Proguard rules + network security config | Committed under `mobile/android/app/` |
+
+Codemagic's pipeline still runs `flutter create . --no-overwrite` as a
+safety net for fresh clones, but the canonical platform code is the one
+in `main`.
+
 ## App identifiers (recap)
 
 | Surface | Value |
@@ -11,6 +28,22 @@ production stores. Do these once; then the four workflows run unattended.
 | iOS App Store ID | `6743315031` |
 | Apple Team ID | `PDNU7JKBQZ` |
 | Android package name | `com.americantv.app` |
+| Play Store URL | https://play.google.com/store/apps/details?id=com.americantv.app |
+
+## Quick-start checklist
+
+Tick each item before triggering the first TestFlight / Internal build:
+
+- [ ] Codemagic account connected to the GitHub repo (§1)
+- [ ] App Store Connect API key uploaded as integration `americantv-app-store` (§2)
+- [ ] Google Play service account JSON uploaded (§3)
+- [ ] `uploadkey.jks` uploaded as `americantv-keystore`, alias `uploadkey` (§4)
+- [ ] `ANDROID_RELEASE_SHA256` set in Laravel production `.env` (§4)
+- [ ] `americantv-prod` env group populated (§5)
+- [ ] App Store Connect record for `com.americantv.userapp` (§6)
+- [ ] Play Console record for `com.americantv.app` (§7)
+- [ ] `AppReviewDemoSeeder` run against production Laravel (§8)
+- [ ] First TestFlight + Internal build green (§9)
 
 ## 1. Sign-up + connect the repo
 
@@ -77,14 +110,18 @@ alias, override `CM_KEYSTORE_ALIAS` in the env group.
 
 The `assetlinks.json` endpoint serves this fingerprint so Android App
 Links can verify the domain owns the app. The Laravel `WellKnownController`
-reads it from `ANDROID_RELEASE_SHA256` in the production `.env`:
+reads it from `ANDROID_RELEASE_SHA256` in the production `.env`.
+
+Use the helper script:
 
 ```sh
-# Run locally with the keystore file at hand; Codemagic doesn't need
-# to know this value.
-keytool -list -v -keystore /path/to/upload-keystore.jks -alias uploadkey \
-  | grep "SHA256:"
+mobile/scripts/extract-keystore-sha256.sh /path/to/uploadkey.jks
 ```
+
+It prompts for the keystore password, runs `keytool -list -v`, and
+prints the SHA-256 + the exact lines to paste into `.env` + the
+post-update verify command. Defaults to alias `uploadkey`; pass a
+second argument to override.
 
 Output looks like:
 
@@ -125,23 +162,28 @@ Upload Keystore" before anything else.
 Codemagic Teams → **Environment variables → Add group** named
 **`americantv-prod`**. Add these keys (all "Secure" except where noted):
 
-| Key | Where to get it | Notes |
-|---|---|---|
-| `API_BASE_URL` | Your Laravel host | e.g. `https://americantv.vip/api/v1` |
-| `REVENUECAT_IOS_KEY` | RevenueCat dashboard | `appl_...` |
-| `REVENUECAT_ANDROID_KEY` | RevenueCat dashboard | `goog_...` |
-| `GOOGLE_OAUTH_CLIENT_ID_ANDROID` | Google Cloud Console → OAuth client IDs | For native Google Sign-In on Android. |
-| `FIREBASE_GOOGLE_SERVICE_INFO_PLIST` | base64 of iOS `GoogleService-Info.plist` | `base64 -i GoogleService-Info.plist`. Empty string = Firebase skipped. |
-| `FIREBASE_GOOGLE_SERVICES_JSON` | base64 of Android `google-services.json` | `base64 -i google-services.json`. Empty = Firebase skipped. |
-| `RELEASE_NOTIFY_EMAIL` | Any email | Build success/failure notifications. Not secret. |
-| `BUILD_VERSION` | Bump per release (e.g. `1.0.0`) | Marketing version. Not secret. |
-| `BUILD_NUMBER` | Auto-set by Codemagic from latest+1 | Don't override unless re-uploading the same version. |
-| `APP_ICON_PNG_B64` | optional, base64 of `assets/icon/app-icon.png` | Since 3.0.0+14 the masters are committed; set this only to override at build time without a code change. |
-| `APP_ICON_ADAPTIVE_FG_PNG_B64` | optional, base64 of adaptive-foreground PNG | Same — optional override. |
-| `ANDROID_RELEASE_SHA256` | SHA-256 of upload keystore | `keytool -list -v -keystore americantv-release.keystore -alias americantv \| grep "SHA256:"`. Powers `/.well-known/assetlinks.json` on the Laravel side. |
+| Key | Where to get it | Required? | Notes |
+|---|---|---|---|
+| `API_BASE_URL` | Your Laravel host | **yes** | e.g. `https://americantv.vip/api/v1`. Preflight rejects non-HTTPS. |
+| `BUILD_VERSION` | Bump per release | **yes** | Currently `3.0.0`. Preflight rejects non-SemVer. |
+| `BUILD_NUMBER` | Auto-set by Codemagic from latest + 1 | auto | Don't override unless re-uploading. |
+| `RELEASE_NOTIFY_EMAIL` | Any email | **yes** | Build success/failure notifications. Not secret. |
+| `REVENUECAT_IOS_KEY` | RevenueCat dashboard | iOS only | `appl_...` |
+| `REVENUECAT_ANDROID_KEY` | RevenueCat dashboard | Android only | `goog_...` |
+| `GOOGLE_OAUTH_CLIENT_ID_ANDROID` | Google Cloud Console → OAuth client IDs | Android only | For native Google Sign-In. |
+| `FIREBASE_GOOGLE_SERVICE_INFO_PLIST` | base64 of iOS `GoogleService-Info.plist` | `ios-app-store` only | `base64 -i GoogleService-Info.plist`. Empty = Firebase skipped at runtime. |
+| `FIREBASE_GOOGLE_SERVICES_JSON` | base64 of Android `google-services.json` | `android-production` only | `base64 -i google-services.json`. Empty = Firebase skipped. |
+| `ANDROID_RELEASE_SHA256` | SHA-256 of upload keystore | `android-production` only | See §4 — use `extract-keystore-sha256.sh`. Preflight rejects the placeholder. Powers `/.well-known/assetlinks.json`. |
+| `APP_ICON_PNG_B64` | base64 of `mobile/assets/icon/app-icon.png` | optional | Overrides the committed master at build time. |
+| `APP_ICON_ADAPTIVE_FG_PNG_B64` | base64 of adaptive-foreground PNG | optional | Same — optional override. |
 
 Once the group is saved, attach it to all four workflows (the YAML
 references it via `groups: [americantv-prod]`).
+
+The `codemagic-preflight.sh` script at the start of every workflow
+verifies the required-for-this-workflow set is populated. Missing or
+malformed values exit with an ASCII-box error in stderr so you see the
+problem at second zero, not after 20 minutes of build.
 
 ## 6. App Store Connect — App record
 
@@ -166,19 +208,54 @@ Pricing / App Privacy sections — the workflow won't progress past
 6. Complete the Content rating + Target audience + Data safety
    declarations before promoting any build past Internal Testing.
 
-## 8. First build smoke test
+## 8. App Review demo account
+
+App Store Connect and Play Console both require working credentials so
+reviewers can exercise the auth + paywall surface without registering.
+
+```sh
+cd core
+php artisan db:seed --class=AppReviewDemoSeeder
+```
+
+The seeder is idempotent — running on every deploy is safe. It:
+- Creates / refreshes `appreview@americantv.vip` with `ev = sv = kv =
+  VERIFIED` (no 2FA, no SMS round-trip).
+- Drops 3 public videos into the user's watch-later list so the
+  Library tab isn't empty.
+- Grants a complimentary 1-year `PurchasedPlan` against the first
+  active `Plan` so reviewers see the post-subscribe content without
+  going through IAP.
+- Stamps a `UserLogin` row + `users.last_login` (if the column exists)
+  to today, so admin "last seen" doesn't read "never".
+
+Pin a stable password by setting `APP_REVIEW_DEMO_PASSWORD` in the
+production `.env` **before** seeding. First-run without it generates a
+random hex string and prints to stderr — save it to 1Password before
+losing the deploy console.
+
+Plug the credentials into:
+- App Store Connect → App Information → App Review Information →
+  Sign-In Required.
+- Play Console → App content → App access → Demo account.
+
+## 9. First build smoke test
 
 1. Codemagic → **`ios-testflight`** workflow → **Start new build** →
-   branch: `claude/analyze-codebase-PEpEp` (or `main` after merge).
-2. Watch the logs. Common first-time errors and fixes:
+   branch: `main` (or the PR branch pre-merge).
+2. Watch the logs. The preflight step exits in seconds with a named
+   missing env var if anything in §5 isn't set. Subsequent common
+   failure modes:
 
    | Symptom | Fix |
    |---|---|
-   | `fetch-signing-files: No bundle id matches` | Confirm App Store Connect "Identifiers" has `com.americantv.userapp` registered. |
-   | `Pods failed to install` | The base scripts run `flutter create` to materialize `ios/` — make sure your branch has the latest `pubspec.yaml`. |
-   | `flutter build ipa` exits with `MissingPluginException` | The `flutter pub get` step is part of `base_scripts`; if it didn't run, the build will fail at IPA stage. |
-   | `agvtool: ... not found` | The "Set bundle identifier + version" step assumes Xcode 15+. Confirm the workflow's `xcode: latest` directive resolved as expected in logs. |
-   | `keychain initialize` permission error | Re-create the App Store Connect API key with App Manager (not Developer) role. |
+   | `fetch-signing-files: No bundle id matches` | App Store Connect → Identifiers must have `com.americantv.userapp`. |
+   | `Pods failed to install` | Transient — re-run. CocoaPods CDN sometimes flakes. |
+   | `flutter build ipa` exits with `MissingPluginException` | `flutter pub get` step in `base_scripts` failed earlier; check the log. |
+   | `agvtool: ... not found` | The "Set bundle identifier + version" step assumes Xcode 15+; confirm `xcode: latest` resolved. |
+   | `keychain initialize` permission error | API key needs App Manager (not Developer) role. |
+   | `[android-signing] WARNING: CM_KEYSTORE_PATH is empty` | Codemagic didn't find a keystore named `americantv-keystore`. Re-check §4. |
+   | `PHP Fatal error: Access level to Tests\TestCase::createApplication() must be public` | Old commit — pull latest; fixed in `c025a35`. |
 
 3. After IPA upload, App Store Connect → TestFlight → Internal Testing →
    Add the build → Add testers.
@@ -186,7 +263,7 @@ Pricing / App Privacy sections — the workflow won't progress past
 4. Repeat for `android-internal`. Successful build = AAB on the Internal
    Testing track of `com.americantv.app`.
 
-## 9. Promoting to production
+## 10. Promoting to production
 
 - **iOS**: After successful TestFlight runs, switch the workflow trigger
   to `ios-app-store`. The next build submits to App Store Review (not
@@ -213,3 +290,7 @@ If Codemagic is down or you need to ship faster than the queue:
 Both require the same signing materials this YAML configures, so
 "keep the keystore + App Store Connect API key safe" is the only
 discipline that matters either way.
+
+The per-release `mobile/docs/DEPLOYMENT.md` runbook is the operational
+companion to this setup doc — once §1–§8 are done, you live in
+`DEPLOYMENT.md` for the rest of the app's life.
