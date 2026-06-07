@@ -117,10 +117,14 @@ class _UploadVideoScreenState extends ConsumerState<UploadVideoScreen> {
     });
 
     final notifier = ref.read(uploadNotifierServiceProvider);
+    // Use the resume job's title if we're resuming; otherwise pick from
+    // the user's typed-in title, falling back to the file name. The
+    // outer ?? + inner ?: needs the parentheses or the ternary
+    // condition resolves to (String? ?? bool) which doesn't typecheck.
     final displayTitle = _resumeJob?.title ??
-        _title.text.trim().isEmpty
-        ? (_file?.uri.pathSegments.last ?? 'video')
-        : _title.text.trim();
+        (_title.text.trim().isEmpty
+            ? (_file?.uri.pathSegments.last ?? 'video')
+            : _title.text.trim());
     await notifier.begin(
       title: displayTitle,
       uniqueId: _resumeJob?.uniqueId,
