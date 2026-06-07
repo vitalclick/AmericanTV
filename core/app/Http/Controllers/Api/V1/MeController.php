@@ -284,6 +284,34 @@ class MeController extends Controller
         return response()->json([], 204);
     }
 
+    /**
+     * Reuses VideoManager's web upload chunked-merge flow so the storage
+     * pipeline (local / Wasabi / S3 / FTP / Cloudflare Stream handoff) stays
+     * identical between web and mobile. Forwards the request after promoting
+     * the auth user to the request's session so the Trait's auth() calls
+     * resolve to the Sanctum user.
+     */
+    public function uploadVideoChunk(Request $request): JsonResponse
+    {
+        \Auth::guard('web')->setUser($request->user());
+        return app(\App\Http\Controllers\User\VideoController::class)
+            ->uploadFile($request);
+    }
+
+    public function mergeVideoChunks(Request $request): JsonResponse
+    {
+        \Auth::guard('web')->setUser($request->user());
+        return app(\App\Http\Controllers\User\VideoController::class)
+            ->mergeChunks($request);
+    }
+
+    public function submitVideoDetails(Request $request, int $id): JsonResponse
+    {
+        \Auth::guard('web')->setUser($request->user());
+        return app(\App\Http\Controllers\User\VideoController::class)
+            ->detailsSubmit($request, $id);
+    }
+
     public function registerDeviceToken(Request $request): JsonResponse
     {
         $data = $request->validate([

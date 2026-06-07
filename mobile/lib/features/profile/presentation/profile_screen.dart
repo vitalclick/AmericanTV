@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../auth/application/auth_controller.dart';
+import '../../upload/presentation/upload_video_screen.dart';
 import '../../wallet/presentation/wallet_screen.dart';
 import 'change_password_screen.dart';
 import 'edit_profile_screen.dart';
@@ -101,6 +102,15 @@ class ProfileScreen extends ConsumerWidget {
               ),
             ),
           ),
+        const _SectionLabel('Creator'),
+        ListTile(
+          leading: const Icon(Icons.cloud_upload_outlined),
+          title: const Text('Upload video'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(builder: (_) => const UploadVideoScreen()),
+          ),
+        ),
         const _SectionLabel('Wallet'),
         ListTile(
           leading: const Icon(Icons.account_balance_wallet_outlined),

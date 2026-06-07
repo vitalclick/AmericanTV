@@ -88,6 +88,12 @@ Route::group([], function () {
         Route::post('me/security/2fa/enable',  'MeController@enable2fa');
         Route::post('me/security/2fa/disable', 'MeController@disable2fa');
 
+        // Creator uploads — bridges to VideoController which owns the
+        // chunked merge + FFMpeg pipeline.
+        Route::post('me/videos/chunk',          'MeController@uploadVideoChunk');
+        Route::post('me/videos/merge',          'MeController@mergeVideoChunks');
+        Route::patch('me/videos/{id}/details',  'MeController@submitVideoDetails');
+
         // Purchases — the only mobile purchase entrypoint.
         Route::post('purchases/iap/verify', 'IapPurchaseController@verify');
         Route::post('purchases/iap/restore', 'IapPurchaseController@restore');
