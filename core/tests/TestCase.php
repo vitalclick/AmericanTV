@@ -116,6 +116,28 @@ abstract class TestCase extends BaseTestCase
             'mail_config'          => (object) [],
             'firebase_config'      => (object) [],
             'socialite_credentials' => (object) [],
+
+            // Frontend / template surfaces (SiteController, Blade partials).
+            // Maintenance off so public routes aren't 503'd by the
+            // MaintenanceMode middleware. Multi-language off so views don't
+            // chase a Language row that doesn't exist.
+            'maintenance_mode' => false,
+            'multi_language'   => false,
+            'system_status'    => 1,
+            'agree'            => false,
+            'base_color'       => '5a5fcd',
+            'secondary_color'  => 'a3a3c4',
+            'input'            => (object) [],
+
+            // Ad-network economics (AdvertiserController + AdsController +
+            // PaymentController gateway-side ad purchase flow). Tests that
+            // assert on dollar amounts flip these explicitly.
+            'ad_config'            => (object) [],
+            'ad_engagement'        => 0,
+            'ad_reach'             => 0,
+            'per_click_earn'       => 0,
+            'per_click_spent'      => 0,
+            'per_impression_spent' => 0,
         ];
 
         Cache::put('GeneralSetting', $defaults);
