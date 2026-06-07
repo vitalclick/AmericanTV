@@ -53,6 +53,11 @@ class TestContainerBindingsAudit extends TestCase
             'TestCase::TEST_ONLY_BINDINGS missing — was the const renamed?',
         );
 
+        $normalizedRegistered = array_map(
+            fn ($c) => ltrim($c, '\\'),
+            $registered,
+        );
+
         $testsDir = realpath(__DIR__ . '/..');
         $files = $this->phpFilesUnder($testsDir);
 
@@ -61,6 +66,11 @@ class TestContainerBindingsAudit extends TestCase
         $pattern = '/(?:->|::)(' . $methodAlternation . ')\(\s*([A-Za-z0-9_\\\\]+)::class/m';
 
         $bound = [];
+        // Bindings that ARE in TEST_ONLY_BINDINGS but were also marked
+        // @audit-ignore — the marker is doing no work and should be
+        // removed so it doesn't bit-rot.
+        $staleIgnoreMarkers = [];
+
         foreach ($files as $file) {
             $source = file_get_contents($file);
 
@@ -70,32 +80,28 @@ class TestContainerBindingsAudit extends TestCase
 
             foreach ($matches[2] as $i => $fqcnMatch) {
                 [$fqcn, $offset] = $fqcnMatch;
-                if ($this->hasAuditIgnoreAbove($source, $offset)) {
-                    continue;
-                }
-
                 $absolute = $this->resolveFqcn($source, $fqcn);
                 if ($absolute === null) continue;
 
                 $method = $matches[1][$i][0];
-                $bound[$absolute] = ($bound[$absolute] ?? '') . " {$file}#{$method}";
-            }
-        }
+                $isIgnored = $this->hasAuditIgnoreAbove($source, $offset);
+                $isRegistered = in_array(ltrim($absolute, '\\'), $normalizedRegistered, true);
 
-        $missing = [];
-        foreach ($bound as $fqcn => $where) {
-            $normalized = ltrim($fqcn, '\\');
-            $normalizedRegistered = array_map(
-                fn ($c) => ltrim($c, '\\'),
-                $registered,
-            );
-            if (! in_array($normalized, $normalizedRegistered, true)) {
-                $missing[$fqcn] = $where;
+                if ($isIgnored && $isRegistered) {
+                    $staleIgnoreMarkers[$absolute] =
+                        ($staleIgnoreMarkers[$absolute] ?? '') . " {$file}#{$method}";
+                    continue;
+                }
+                if ($isIgnored) continue;
+
+                if (! $isRegistered) {
+                    $bound[$absolute] = ($bound[$absolute] ?? '') . " {$file}#{$method}";
+                }
             }
         }
 
         $this->assertEmpty(
-            $missing,
+            $bound,
             "The following classes are bound via the container in tests but\n"
             . "aren't in TestCase::TEST_ONLY_BINDINGS, so a mock from one test will\n"
             . "leak into the next:\n\n"
@@ -103,13 +109,28 @@ class TestContainerBindingsAudit extends TestCase
                 "\n",
                 array_map(
                     fn ($fqcn, $where) => "  - {$fqcn} (in:{$where})",
-                    array_keys($missing),
-                    array_values($missing),
+                    array_keys($bound),
+                    array_values($bound),
                 )
             ) . "\n\n"
             . "Either add the class to TestCase::TEST_ONLY_BINDINGS so it gets forgotten\n"
             . "on tearDown, OR mark the binding with a `// @audit-ignore: reason`\n"
             . "comment on the preceding line."
+        );
+
+        $this->assertEmpty(
+            $staleIgnoreMarkers,
+            "The following bindings carry an @audit-ignore comment but are ALSO in\n"
+            . "TestCase::TEST_ONLY_BINDINGS — the marker is doing no work and should\n"
+            . "be removed so it doesn't sit around as future code-review noise:\n\n"
+            . implode(
+                "\n",
+                array_map(
+                    fn ($fqcn, $where) => "  - {$fqcn} (in:{$where})",
+                    array_keys($staleIgnoreMarkers),
+                    array_values($staleIgnoreMarkers),
+                )
+            )
         );
     }
 
