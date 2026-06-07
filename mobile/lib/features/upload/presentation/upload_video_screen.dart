@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../api/api_exception.dart';
+import '../data/upload_notifier_service.dart';
 import '../data/upload_repository.dart';
 
 class _ResumeCard extends StatelessWidget {
@@ -114,6 +115,13 @@ class _UploadVideoScreenState extends ConsumerState<UploadVideoScreen> {
       _error = null;
     });
 
+    final notifier = ref.read(uploadNotifierServiceProvider);
+    final displayTitle = _resumeJob?.title ??
+        _title.text.trim().isEmpty
+        ? (_file?.uri.pathSegments.last ?? 'video')
+        : _title.text.trim();
+    await notifier.begin(title: displayTitle);
+
     try {
       final repo = ref.read(uploadRepositoryProvider);
       final id = _resumeJob != null
@@ -121,6 +129,7 @@ class _UploadVideoScreenState extends ConsumerState<UploadVideoScreen> {
               _resumeJob!,
               onProgress: (p) {
                 if (mounted) setState(() => _progress = p);
+                notifier.update(title: displayTitle, progress: p);
               },
             )
           : await repo.startUpload(
@@ -128,8 +137,10 @@ class _UploadVideoScreenState extends ConsumerState<UploadVideoScreen> {
               title: _title.text.trim().isEmpty ? null : _title.text.trim(),
               onProgress: (p) {
                 if (mounted) setState(() => _progress = p);
+                notifier.update(title: displayTitle, progress: p);
               },
             );
+      await notifier.finish(success: true);
       if (mounted) {
         setState(() {
           _resultVideoId = id;
@@ -137,8 +148,10 @@ class _UploadVideoScreenState extends ConsumerState<UploadVideoScreen> {
         });
       }
     } on ApiException catch (e) {
+      await notifier.finish(success: false, finalMessage: e.message);
       if (mounted) setState(() => _error = e.message);
     } catch (e) {
+      await notifier.finish(success: false);
       if (mounted) setState(() => _error = e.toString());
     } finally {
       if (mounted) setState(() => _busy = false);
