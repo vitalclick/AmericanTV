@@ -2,6 +2,7 @@
 
 namespace App\Services\Stream;
 
+use Firebase\JWT\JWT;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -145,13 +146,26 @@ class CloudflareStreamService
     }
 
     /**
-     * Mint a Stream signed token. Production: sign an RS256 JWT with your
-     * Stream signing key (kid = $this->signingKeyId, payload = { sub: $uid,
-     * exp: time()+$ttl }). Use firebase/php-jwt or lcobucci/jwt.
+     * Mint a Stream signed token (RS256 JWT) bound to a single video UID.
+     *
+     * Cloudflare's signing key is generated per-account via the dashboard or
+     * API. The `kid` claim must match the key ID; `sub` is the video UID;
+     * `exp` is the absolute expiry. See Cloudflare Stream "Signed URLs" docs.
      */
     private function mintToken(string $videoUid, int $ttlSeconds): string
     {
-        // TODO(production): real JWT signing. Stubbed for skeleton.
-        throw new \RuntimeException('Stream signed-token JWT signing not implemented in skeleton');
+        $now = time();
+
+        return JWT::encode(
+            payload: [
+                'kid' => $this->signingKeyId,
+                'sub' => $videoUid,
+                'exp' => $now + $ttlSeconds,
+                'nbf' => $now - 5, // tiny skew tolerance.
+            ],
+            key:    $this->signingKeyPem,
+            alg:    'RS256',
+            keyId:  $this->signingKeyId,
+        );
     }
 }
