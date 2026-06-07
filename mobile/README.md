@@ -161,7 +161,7 @@ providers.
 | `sign_in_with_apple` | Apple App Store requirement when offering social login. |
 | `google_sign_in` | Native Google OAuth flow → ID token to Laravel. |
 
-See `docs/flutter-vs-react-native.md` (in the repo root `docs/mobile/`) for
+See `docs/flutter-vs-react-native.md` for
 the rationale behind this stack.
 
 ## CI
