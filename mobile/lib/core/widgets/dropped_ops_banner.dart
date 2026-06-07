@@ -75,6 +75,16 @@ class _DroppedOpsBannerState extends ConsumerState<DroppedOpsBanner>
     }
   }
 
+  Future<void> _dismissComments() async {
+    await ref.read(commentRepositoryProvider).acknowledgeDroppedOps();
+    if (mounted) setState(() => _comments = const []);
+  }
+
+  Future<void> _dismissWatchLater() async {
+    await ref.read(libraryRepositoryProvider).acknowledgeDroppedOps();
+    if (mounted) setState(() => _watchLater = const []);
+  }
+
   int get _total => _comments.length + _watchLater.length;
 
   String get _headline {
@@ -93,59 +103,105 @@ class _DroppedOpsBannerState extends ConsumerState<DroppedOpsBanner>
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      builder: (_) => SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                "Couldn't sync",
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              if (_comments.isNotEmpty) ...[
-                const SizedBox(height: 16),
-                Text('Comments', style: Theme.of(context).textTheme.titleMedium),
-                for (final op in _comments)
-                  Card(
-                    child: ListTile(
-                      leading: const Icon(Icons.comment_outlined),
-                      title: Text(op.body, maxLines: 3, overflow: TextOverflow.ellipsis),
-                      subtitle: Text(
-                        '${op.kind} • ${DateFormat.yMMMd().add_jm().format(op.droppedAt)}'
-                        '${op.status != null ? ' • HTTP ${op.status}' : ''}',
-                      ),
-                    ),
-                  ),
-              ],
-              if (_watchLater.isNotEmpty) ...[
-                const SizedBox(height: 16),
-                Text('Watch later', style: Theme.of(context).textTheme.titleMedium),
-                for (final op in _watchLater)
-                  Card(
-                    child: ListTile(
-                      leading: Icon(op.action == 'add' ? Icons.bookmark_add_outlined : Icons.bookmark_remove_outlined),
-                      title: Text('${op.action == 'add' ? 'Save' : 'Remove'} video ${op.videoId}'),
-                      subtitle: Text(
-                        'Tried ${DateFormat.yMMMd().add_jm().format(op.droppedAt)}'
-                        '${op.status != null ? ' • HTTP ${op.status}' : ''}',
-                      ),
-                    ),
-                  ),
-              ],
-              const SizedBox(height: 12),
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton(
-                  onPressed: () async {
-                    await _dismissAll();
-                    if (context.mounted) Navigator.of(context).pop();
-                  },
-                  child: const Text('Dismiss all'),
+      // StatefulBuilder so per-section dismiss can rebuild the sheet
+      // without us having to re-open it.
+      builder: (sheetCtx) => StatefulBuilder(
+        builder: (sheetCtx, setSheetState) => SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  "Couldn't sync",
+                  style: Theme.of(context).textTheme.titleLarge,
                 ),
-              ),
-            ],
+                if (_comments.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text('Comments',
+                            style: Theme.of(context).textTheme.titleMedium),
+                      ),
+                      TextButton(
+                        onPressed: () async {
+                          await _dismissComments();
+                          // If both sections are now empty, close the sheet.
+                          // Otherwise just rebuild it with the remaining one.
+                          if (sheetCtx.mounted) {
+                            if (_total == 0) {
+                              Navigator.of(sheetCtx).pop();
+                            } else {
+                              setSheetState(() {});
+                            }
+                          }
+                        },
+                        child: const Text('Dismiss comments'),
+                      ),
+                    ],
+                  ),
+                  for (final op in _comments)
+                    Card(
+                      child: ListTile(
+                        leading: const Icon(Icons.comment_outlined),
+                        title: Text(op.body, maxLines: 3, overflow: TextOverflow.ellipsis),
+                        subtitle: Text(
+                          '${op.kind} • ${DateFormat.yMMMd().add_jm().format(op.droppedAt)}'
+                          '${op.status != null ? ' • HTTP ${op.status}' : ''}',
+                        ),
+                      ),
+                    ),
+                ],
+                if (_watchLater.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text('Watch later',
+                            style: Theme.of(context).textTheme.titleMedium),
+                      ),
+                      TextButton(
+                        onPressed: () async {
+                          await _dismissWatchLater();
+                          if (sheetCtx.mounted) {
+                            if (_total == 0) {
+                              Navigator.of(sheetCtx).pop();
+                            } else {
+                              setSheetState(() {});
+                            }
+                          }
+                        },
+                        child: const Text('Dismiss watch-later'),
+                      ),
+                    ],
+                  ),
+                  for (final op in _watchLater)
+                    Card(
+                      child: ListTile(
+                        leading: Icon(op.action == 'add' ? Icons.bookmark_add_outlined : Icons.bookmark_remove_outlined),
+                        title: Text('${op.action == 'add' ? 'Save' : 'Remove'} video ${op.videoId}'),
+                        subtitle: Text(
+                          'Tried ${DateFormat.yMMMd().add_jm().format(op.droppedAt)}'
+                          '${op.status != null ? ' • HTTP ${op.status}' : ''}',
+                        ),
+                      ),
+                    ),
+                ],
+                const SizedBox(height: 12),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: () async {
+                      await _dismissAll();
+                      if (sheetCtx.mounted) Navigator.of(sheetCtx).pop();
+                    },
+                    child: const Text('Dismiss all'),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
