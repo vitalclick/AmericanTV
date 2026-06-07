@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../../api/api_exception.dart';
 import '../../feed/domain/video_summary.dart';
 import '../data/library_repository.dart';
+import 'dropped_watch_later_banner.dart';
 
 final _watchLaterProvider =
     StreamProvider.autoDispose<List<VideoSummary>>((ref) async* {
@@ -40,6 +41,7 @@ class LibraryScreen extends ConsumerWidget {
       length: 3,
       child: Column(
         children: [
+          const DroppedWatchLaterBanner(),
           const TabBar(
             tabs: [
               Tab(icon: Icon(Icons.watch_later_outlined), text: 'Watch Later'),
