@@ -6,6 +6,16 @@ Route::get('/clear', function () {
     \Illuminate\Support\Facades\Artisan::call('optimize:clear');
 });
 
+// Universal Links / App Links well-known files. Must serve at the root
+// domain with Content-Type: application/json and no redirects, so they
+// live as explicit GET routes rather than as static files under public/.
+Route::get('/.well-known/apple-app-site-association',
+    'WellKnownController@appleAppSiteAssociation');
+Route::get('/apple-app-site-association',
+    'WellKnownController@appleAppSiteAssociation');
+Route::get('/.well-known/assetlinks.json',
+    'WellKnownController@androidAssetLinks');
+
 
 
 Route::get('cron', 'CronController@cron')->name('cron');
