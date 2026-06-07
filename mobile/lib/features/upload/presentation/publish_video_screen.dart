@@ -1,3 +1,7 @@
+import 'dart:io';
+
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -27,6 +31,8 @@ class _PublishVideoScreenState extends ConsumerState<PublishVideoScreen> {
   final List<String> _tags = [];
   bool _busy = false;
   String? _error;
+  File? _thumbnailFile;
+  String? _uploadedThumbnailUrl;
 
   @override
   void dispose() {
@@ -46,6 +52,18 @@ class _PublishVideoScreenState extends ConsumerState<PublishVideoScreen> {
     });
   }
 
+  Future<void> _pickThumbnail() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['jpg', 'jpeg', 'png'],
+    );
+    if (result == null || result.files.single.path == null) return;
+    setState(() {
+      _thumbnailFile = File(result.files.single.path!);
+      _uploadedThumbnailUrl = null;
+    });
+  }
+
   Future<void> _submit() async {
     if (_categoryId == null) {
       setState(() => _error = 'Pick a category first.');
@@ -56,6 +74,14 @@ class _PublishVideoScreenState extends ConsumerState<PublishVideoScreen> {
       _error = null;
     });
     try {
+      // Upload the custom thumbnail first if any — separate endpoint, so the
+      // user can iterate on the thumbnail without re-publishing.
+      if (_thumbnailFile != null && _uploadedThumbnailUrl == null) {
+        _uploadedThumbnailUrl = await ref
+            .read(publishRepositoryProvider)
+            .uploadThumbnail(videoId: widget.videoId, localPath: _thumbnailFile!.path);
+      }
+
       await ref.read(publishRepositoryProvider).publish(
             videoId: widget.videoId,
             categoryId: _categoryId!,
@@ -86,6 +112,42 @@ class _PublishVideoScreenState extends ConsumerState<PublishVideoScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              Text('Thumbnail', style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 8),
+              AspectRatio(
+                aspectRatio: 16 / 9,
+                child: InkWell(
+                  onTap: _busy ? null : _pickThumbnail,
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      border: Border.all(
+                        color: Theme.of(context).colorScheme.outlineVariant,
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: _thumbnailFile != null
+                        ? Image.file(_thumbnailFile!, fit: BoxFit.cover)
+                        : _uploadedThumbnailUrl != null
+                            ? CachedNetworkImage(
+                                imageUrl: _uploadedThumbnailUrl!,
+                                fit: BoxFit.cover,
+                              )
+                            : Center(
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: const [
+                                    Icon(Icons.image_outlined, size: 32),
+                                    SizedBox(height: 4),
+                                    Text('Pick a custom thumbnail (optional)'),
+                                  ],
+                                ),
+                              ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
               Text('Category', style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 8),
               categoriesAsync.when(

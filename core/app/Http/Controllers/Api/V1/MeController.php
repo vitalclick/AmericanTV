@@ -323,6 +323,51 @@ class MeController extends Controller
      * accepts JSON (rather than a form post) and allows zero tags so
      * mobile creators can publish without forcing a tag taxonomy on them.
      */
+    /**
+     * Replace the custom thumbnail for a video the caller owns. Smaller
+     * surface than detailsSubmit (which also takes title + slug + desc) so
+     * the publish flow can let creators set just the thumbnail.
+     */
+    public function uploadVideoThumbnail(Request $request, int $id): JsonResponse
+    {
+        $request->validate([
+            'thumbnail' => [
+                'required',
+                'file',
+                'mimes:jpg,jpeg,png',
+                'max:5120', // 5 MB.
+            ],
+        ]);
+
+        \Auth::guard('web')->setUser($request->user());
+
+        $video = \App\Models\Video::where('user_id', $request->user()->id)
+            ->where('step', '>=', Status::FIRST_STEP)
+            ->findOrFail($id);
+
+        try {
+            $video->thumb_image = fileUploader(
+                $request->file('thumbnail'),
+                getFilePath('thumbnail'),
+                getFileSize('thumbnail'),
+                $video->thumb_image,
+                getFileThumb('thumbnail'),
+            );
+            $video->save();
+        } catch (\Throwable $e) {
+            return response()->json([
+                'message' => 'Could not save the thumbnail. ' . $e->getMessage(),
+            ], 500);
+        }
+
+        return response()->json([
+            'data' => [
+                'id'        => $video->id,
+                'thumbnail' => asset(getFilePath('thumbnail') . '/' . $video->thumb_image),
+            ],
+        ]);
+    }
+
     public function publishVideo(Request $request, int $id): JsonResponse
     {
         \Auth::guard('web')->setUser($request->user());

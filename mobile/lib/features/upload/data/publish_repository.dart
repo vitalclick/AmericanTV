@@ -42,6 +42,23 @@ class PublishRepository {
       throw ApiException.fromDio(e);
     }
   }
+
+  /// Replaces the auto-generated thumbnail. The new URL is what /videos/{id}
+  /// will return on next fetch.
+  Future<String> uploadThumbnail({required int videoId, required String localPath}) async {
+    try {
+      final form = FormData.fromMap({
+        'thumbnail': await MultipartFile.fromFile(localPath),
+      });
+      final response = await _dio.post<Map<String, dynamic>>(
+        '/me/videos/$videoId/thumbnail',
+        data: form,
+      );
+      return (response.data!['data'] as Map<String, dynamic>)['thumbnail'] as String;
+    } on DioException catch (e) {
+      throw ApiException.fromDio(e);
+    }
+  }
 }
 
 class PublishCategory {
