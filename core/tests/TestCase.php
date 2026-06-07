@@ -4,6 +4,7 @@ namespace Tests;
 
 use Aws\S3\S3Client;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
+use Illuminate\Support\Facades\Cache;
 
 abstract class TestCase extends BaseTestCase
 {
@@ -22,12 +23,10 @@ abstract class TestCase extends BaseTestCase
         parent::setUp();
 
         // Most controllers call `gs(...)` to read the GeneralSetting singleton.
-        // That row isn't seeded in :memory: tests, so stub the global helper
-        // to return safe defaults for every key the auth flow touches.
-        if (!app()->bound('gs.test_stub_installed')) {
-            $this->installGsStub();
-            app()->instance('gs.test_stub_installed', true);
-        }
+        // That row isn't seeded in :memory: tests, so we drop a stand-in into
+        // the cache the helper actually reads (`Cache::get('GeneralSetting')`)
+        // and let individual tests override specific keys via the same cache.
+        $this->installGsStub();
     }
 
     protected function tearDown(): void
@@ -53,14 +52,59 @@ abstract class TestCase extends BaseTestCase
     }
 
     /**
-     * The gs() helper reads from a cached GeneralSetting row; in test we
-     * return a static stub so the AuthController doesn't blow up when the
-     * row is absent.
+     * The gs() helper reads `Cache::get('GeneralSetting')`. We populate that
+     * cache slot with a stand-in stdClass whose properties cover every key
+     * the api/v1 surface touches. Tests can override specific keys with
+     * `gsOverride('secure_password', true)`.
+     *
+     * Without this stub, gs('foo') returned null for every key — which
+     * silently exercised the "feature disabled" branch and made it
+     * impossible to test the "enabled" branch without verbose per-test
+     * Cache::put plumbing.
      */
     private function installGsStub(): void
     {
-        // No-op for now — the helper is forgiving; gs('foo') returns null
-        // when the row is absent, which exercises the "feature disabled"
-        // branch we want to test.
+        $defaults = (object) [
+            // Auth feature flags — false means "no enforcement", which is
+            // the most permissive shape for a fresh test install.
+            'registration'    => true,   // registration *allowed* by default.
+            'secure_password' => false,
+            'ev'              => false,  // email verification optional.
+            'sv'              => false,  // mobile verification optional.
+            'kv'              => false,  // KYC optional.
+
+            // Display / formatting keys.
+            'cur_text'        => 'USD',
+            'site_name'       => 'TestTV',
+            'cur_sym'         => '$',
+
+            // FFmpeg gating in VideoManager — off in tests so transcoding
+            // is skipped and we don't depend on a binary being installed.
+            'ffmpeg_status'   => false,
+
+            // Sale-side commission percentages, mirrored from production
+            // defaults so transaction tests get plausible figures without
+            // having to seed them per test.
+            'video_sell_charge'    => 0,
+            'playlist_sell_charge' => 0,
+            'plan_sell_charge'     => 0,
+        ];
+
+        Cache::put('GeneralSetting', $defaults);
+    }
+
+    /**
+     * Override one gs() key for the current test. Equivalent to mutating
+     * the stub and re-putting it; tear-down restores the defaults via
+     * setUp on the next test.
+     */
+    protected function gsOverride(string $key, mixed $value): void
+    {
+        $current = Cache::get('GeneralSetting');
+        if (! is_object($current)) {
+            $current = (object) [];
+        }
+        $current->{$key} = $value;
+        Cache::put('GeneralSetting', $current);
     }
 }
