@@ -1,4 +1,7 @@
-# Binary PNG sources are excluded — keep them in the design / brand
-# repo and copy in as part of the build. The README documents the
-# expected files + dimensions.
+# From 3.0.0+14 the production masters are committed so a fresh
+# clone + Codemagic build doesn't depend on env-var-shipped binaries.
+# Any OTHER PNG (e.g. work-in-progress alternatives, design exports)
+# stays ignored.
 *.png
+!app-icon.png
+!app-icon-adaptive-foreground.png

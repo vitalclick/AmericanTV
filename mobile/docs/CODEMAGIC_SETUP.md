@@ -136,8 +136,8 @@ Codemagic Teams → **Environment variables → Add group** named
 | `RELEASE_NOTIFY_EMAIL` | Any email | Build success/failure notifications. Not secret. |
 | `BUILD_VERSION` | Bump per release (e.g. `1.0.0`) | Marketing version. Not secret. |
 | `BUILD_NUMBER` | Auto-set by Codemagic from latest+1 | Don't override unless re-uploading the same version. |
-| `APP_ICON_PNG_B64` | base64 of `assets/icon/app-icon.png` | `base64 -i app-icon.png`. Master 1024×1024 icon (no alpha). |
-| `APP_ICON_ADAPTIVE_FG_PNG_B64` | base64 of adaptive-foreground PNG | `base64 -i app-icon-adaptive-foreground.png`. Transparent background. |
+| `APP_ICON_PNG_B64` | optional, base64 of `assets/icon/app-icon.png` | Since 3.0.0+14 the masters are committed; set this only to override at build time without a code change. |
+| `APP_ICON_ADAPTIVE_FG_PNG_B64` | optional, base64 of adaptive-foreground PNG | Same — optional override. |
 | `ANDROID_RELEASE_SHA256` | SHA-256 of upload keystore | `keytool -list -v -keystore americantv-release.keystore -alias americantv \| grep "SHA256:"`. Powers `/.well-known/assetlinks.json` on the Laravel side. |
 
 Once the group is saved, attach it to all four workflows (the YAML
