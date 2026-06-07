@@ -12,10 +12,20 @@ class WellKnownTest extends TestCase
 
         $response->assertOk();
         $response->assertHeader('Content-Type', 'application/json');
+        // One-hour cache so a CDN can absorb request volume after deploy
+        // without re-rotating Team IDs being indefinitely stuck.
+        $response->assertHeader('Cache-Control', 'public, max-age=3600');
         // Apple's tooling refuses to follow redirects, so the legacy
         // root-relative path must also resolve directly (no 301).
         $rootCopy = $this->get('/apple-app-site-association');
         $rootCopy->assertOk();
+    }
+
+    public function test_android_asset_links_carries_a_cache_control_header(): void
+    {
+        $this->get('/.well-known/assetlinks.json')
+            ->assertOk()
+            ->assertHeader('Cache-Control', 'public, max-age=3600');
     }
 
     public function test_apple_app_site_association_carries_the_right_app_id(): void

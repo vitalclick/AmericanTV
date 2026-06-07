@@ -61,9 +61,7 @@ class WellKnownController extends Controller
             ],
         ];
 
-        return response()
-            ->json($payload, 200, [], JSON_UNESCAPED_SLASHES)
-            ->header('Content-Type', 'application/json');
+        return $this->respond($payload);
     }
 
     /**
@@ -101,9 +99,7 @@ class WellKnownController extends Controller
             ],
         ];
 
-        return response()
-            ->json($payload, 200, [], JSON_UNESCAPED_SLASHES)
-            ->header('Content-Type', 'application/json');
+        return $this->respond($payload);
     }
 
     /**
@@ -122,5 +118,19 @@ class WellKnownController extends Controller
     private function androidPackageName(): string
     {
         return (string) env('ANDROID_PACKAGE_NAME', 'com.americantv.app');
+    }
+
+    /**
+     * One-hour public cache. Long enough that the CDN absorbs request
+     * volume after a deploy; short enough that a Team ID / bundle ID
+     * rotation propagates within the day. Apple's verification daemon
+     * respects Cache-Control max-age; Android's does too.
+     */
+    private function respond(array $payload): Response
+    {
+        return response()
+            ->json($payload, 200, [], JSON_UNESCAPED_SLASHES)
+            ->header('Content-Type', 'application/json')
+            ->header('Cache-Control', 'public, max-age=3600');
     }
 }

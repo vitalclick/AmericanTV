@@ -167,14 +167,26 @@ definitions:
       #     production workflows so we never accidentally ship the
       #     Flutter default to the store.
       #   - "true": missing icon source is logged and the build continues
-      #     with the Flutter default. Used by dev / TestFlight smoke runs
-      #     where the design assets aren't always wired up.
+      #     with the Flutter default. Drops a marker file into the
+      #     artifacts so the marker is visible in the Codemagic UI
+      #     without needing to grep the icon step's logs.
       script: |
         cd $CM_BUILD_DIR/mobile
         if [ -f assets/icon/app-icon.png ]; then
           dart run flutter_launcher_icons
+          # Clean up any previous marker if the icons are now in place.
+          rm -f build/.shipped-with-default-icon
         elif [ "$ALLOW_DEFAULT_ICON" = "true" ]; then
           echo "No app-icon.png; ALLOW_DEFAULT_ICON=true — using Flutter's default icon."
+          mkdir -p build
+          cat > build/.shipped-with-default-icon <<MARK
+        Workflow: $CM_WORKFLOW_ID
+        Build: $BUILD_VERSION ($BUILD_NUMBER)
+        Reason: APP_ICON_PNG_B64 was not set; ALLOW_DEFAULT_ICON was true.
+
+        Action: populate APP_ICON_PNG_B64 in the americantv-prod env
+        group before the next release. See CODEMAGIC_SETUP.md.
+        MARK
         else
           echo "FATAL: No app-icon.png and ALLOW_DEFAULT_ICON is not 'true'."
           echo "Either populate APP_ICON_PNG_B64 in the env group OR set"
@@ -348,6 +360,7 @@ workflows:
     artifacts:
       - mobile/build/ios/ipa/*.ipa
       - mobile/build/ios/archive/**/dSYMs/**
+      - mobile/build/.shipped-with-default-icon
       - /tmp/xcodebuild_logs/*.log
       - mobile/flutter_drive.log
 
@@ -447,6 +460,7 @@ workflows:
     artifacts:
       - mobile/build/ios/ipa/*.ipa
       - mobile/build/ios/archive/**/dSYMs/**
+      - mobile/build/.shipped-with-default-icon
       - /tmp/xcodebuild_logs/*.log
 
     publishing:
@@ -519,6 +533,7 @@ workflows:
     artifacts:
       - mobile/build/app/outputs/bundle/release/app-release.aab
       - mobile/build/app/outputs/mapping/release/mapping.txt
+      - mobile/build/.shipped-with-default-icon
 
     publishing:
       google_play:
@@ -578,6 +593,7 @@ workflows:
     artifacts:
       - mobile/build/app/outputs/bundle/release/app-release.aab
       - mobile/build/app/outputs/mapping/release/mapping.txt
+      - mobile/build/.shipped-with-default-icon
 
     publishing:
       google_play:
