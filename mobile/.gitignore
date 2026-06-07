@@ -1,0 +1,39 @@
+# Flutter
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+build/
+.fvm/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Generated
+lib/api/generated/
+*.g.dart
+*.freezed.dart
+
+# Platform projects — regenerate with `flutter create .`
+android/
+ios/
+web/
+macos/
+linux/
+windows/
+
+# Env + secrets
+.env
+google-services.json
+GoogleService-Info.plist
+**/google-services.json
+**/GoogleService-Info.plist
+ios/Runner/GoogleService-Info.plist
+
+# OS
+.DS_Store
+Thumbs.db

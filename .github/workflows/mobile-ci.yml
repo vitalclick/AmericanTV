@@ -1,0 +1,44 @@
+name: Mobile CI
+
+on:
+  push:
+    paths:
+      - 'mobile/**'
+      - '.github/workflows/mobile-ci.yml'
+  pull_request:
+    paths:
+      - 'mobile/**'
+      - '.github/workflows/mobile-ci.yml'
+
+jobs:
+  analyze-and-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.24.x'
+          cache: true
+
+      - name: Materialize platform projects
+        # Lets `flutter analyze` resolve plugin platform code. We don't keep
+        # android/ios in version control — see mobile/README.md.
+        run: flutter create . --org com.americantv --project-name americantv --platforms ios,android --no-overwrite
+
+      - name: Stub .env so dotenv asset loads
+        run: cp .env.example .env
+
+      - run: flutter pub get
+
+      - name: Run codegen (freezed / json_serializable)
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - run: flutter analyze --no-fatal-infos
+
+      - run: flutter test

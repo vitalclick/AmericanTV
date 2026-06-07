@@ -1,0 +1,10 @@
+pubName: americantv_api
+pubDescription: Generated Dart client for the AmericanTV API.
+pubVersion: 0.1.0
+pubAuthor: AmericanTV
+
+# dart-dio specific options
+serializationLibrary: built_value     # default; pairs with built_value runtime
+nullableFields: true
+dateLibrary: core
+useEnumExtension: true

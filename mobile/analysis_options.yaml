@@ -1,0 +1,19 @@
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  exclude:
+    - lib/api/generated/**
+    - "**/*.g.dart"
+    - "**/*.freezed.dart"
+  errors:
+    invalid_annotation_target: ignore
+
+linter:
+  rules:
+    prefer_single_quotes: true
+    require_trailing_commas: true
+    avoid_print: true
+    sort_constructors_first: true
+    sort_unnamed_constructors_first: true
+    use_super_parameters: true
+    unawaited_futures: true
