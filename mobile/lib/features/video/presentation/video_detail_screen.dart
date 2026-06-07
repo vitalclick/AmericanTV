@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../api/api_exception.dart';
+import '../../iap/presentation/plan_paywall_screen.dart';
 import '../data/reactions_repository.dart';
 import '../data/video_repository.dart';
 import '../domain/video_detail.dart';
@@ -80,7 +81,10 @@ class _DetailBody extends ConsumerWidget {
                 )
               else
                 Center(
-                  child: _PaywallBadge(price: summary.price ?? 0),
+                  child: _PaywallBadge(
+                    price: summary.price ?? 0,
+                    onTap: () => _openPaywall(context, ref),
+                  ),
                 ),
             ],
           ),
@@ -150,6 +154,86 @@ class _DetailBody extends ConsumerWidget {
     } on ApiException catch (e) {
       messenger.showSnackBar(SnackBar(content: Text(e.message)));
     }
+  }
+
+  /// Surfaces the cheapest plan that contains this video and is registered
+  /// on the relevant store. If none qualify (e.g. video is sold a la carte
+  /// only, or no IAP product is configured yet), we send the user to the
+  /// existing paid-video flow on web.
+  Future<void> _openPaywall(BuildContext context, WidgetRef ref) async {
+    final candidates = detail.accessPlans.where((p) => p.isMobileAvailable).toList()
+      ..sort((a, b) => (a.mobilePriceUsd ?? a.priceUsd)
+          .compareTo(b.mobilePriceUsd ?? b.priceUsd));
+
+    if (candidates.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'This video isn\'t available for purchase in the app yet — '
+            'visit americantv.vip to unlock it.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    if (candidates.length == 1) {
+      await _pushPaywall(context, ref, candidates.first);
+      return;
+    }
+
+    final picked = await showModalBottomSheet<AccessPlan>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => _PlanPicker(plans: candidates),
+    );
+    if (picked != null && context.mounted) {
+      await _pushPaywall(context, ref, picked);
+    }
+  }
+
+  Future<void> _pushPaywall(BuildContext context, WidgetRef ref, AccessPlan plan) async {
+    final didSubscribe = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => PlanPaywallScreen(slug: plan.slug)),
+    );
+    if (didSubscribe == true && context.mounted) {
+      // Re-fetch the detail so userHasAccess flips and the play button
+      // replaces the paywall badge.
+      ref.invalidate(_videoDetailProvider(detail.summary.slug));
+    }
+  }
+}
+
+class _PlanPicker extends StatelessWidget {
+  const _PlanPicker({required this.plans});
+  final List<AccessPlan> plans;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text('Choose a plan', style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 12),
+            for (final p in plans)
+              Card(
+                child: ListTile(
+                  onTap: () => Navigator.of(context).pop(p),
+                  title: Text(p.name),
+                  subtitle: Text(
+                    '\$${(p.mobilePriceUsd ?? p.priceUsd).toStringAsFixed(2)} / month',
+                  ),
+                  trailing: const Icon(Icons.chevron_right),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -252,27 +336,35 @@ class _ReactionBarState extends ConsumerState<_ReactionBar> {
 }
 
 class _PaywallBadge extends StatelessWidget {
-  const _PaywallBadge({required this.price});
+  const _PaywallBadge({required this.price, required this.onTap});
   final double price;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      decoration: BoxDecoration(
-        color: Colors.black87,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.lock_outline, color: Colors.white),
-          const SizedBox(width: 8),
-          Text(
-            'Unlock for \$${price.toStringAsFixed(2)}',
-            style: const TextStyle(color: Colors.white),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          decoration: BoxDecoration(
+            color: Colors.black87,
+            borderRadius: BorderRadius.circular(8),
           ),
-        ],
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.lock_outline, color: Colors.white),
+              const SizedBox(width: 8),
+              Text(
+                'Unlock for \$${price.toStringAsFixed(2)}',
+                style: const TextStyle(color: Colors.white),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

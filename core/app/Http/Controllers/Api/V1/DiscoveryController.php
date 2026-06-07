@@ -81,6 +81,8 @@ class DiscoveryController extends Controller
                 'tags',
                 'subtitles',
                 'userReactions',
+                'plans',
+                'playlists.plans',
             )
             ->withCount('allComments as all_comments_count')
             ->where('slug', $slug)
