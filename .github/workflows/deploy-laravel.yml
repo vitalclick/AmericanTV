@@ -111,10 +111,25 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -qq -y rsync
 
       - name: Setup SSH agent
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.CPANEL_SSH_KEY }}
-          ssh-passphrase: ${{ secrets.CPANEL_SSH_PASSPHRASE }}
+        # webfactory/ssh-agent doesn't accept a passphrase input, and
+        # cPanel forces a minimum-strength passphrase on key generation,
+        # so we set up the agent manually: strip the passphrase off the
+        # key (using the one we know via secret) and add the now-bare
+        # key to a fresh ssh-agent. SSH_AUTH_SOCK is propagated via
+        # GITHUB_ENV so subsequent steps share the same agent.
+        env:
+          SSH_KEY: ${{ secrets.CPANEL_SSH_KEY }}
+          SSH_PASSPHRASE: ${{ secrets.CPANEL_SSH_PASSPHRASE }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keygen -p -P "$SSH_PASSPHRASE" -N "" -f ~/.ssh/id_rsa >/dev/null
+          eval "$(ssh-agent -s)"
+          echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK" >> "$GITHUB_ENV"
+          echo "SSH_AGENT_PID=$SSH_AGENT_PID" >> "$GITHUB_ENV"
+          ssh-add ~/.ssh/id_rsa
 
       - name: Verify SSH connectivity
         run: |
