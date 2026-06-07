@@ -153,24 +153,38 @@ definitions:
         fi
 
     - name: Wire Android release shrinking + network security config
+      # As of 3.0.0+14 the committed build.gradle + AndroidManifest.xml
+      # already carry the proguard + networkSecurityConfig wiring (see
+      # commit 87204c9). This step is now a backstop: it inserts the
+      # bits only if they're absent — useful if a future `flutter create`
+      # ever overwrites them, useless otherwise.
       script: |
         cd $CM_BUILD_DIR/mobile
         if [ ! -f android/app/build.gradle ]; then exit 0; fi
 
-        # Add the networkSecurityConfig attribute to the <application> tag
-        # in AndroidManifest.xml — sed it in only if absent.
         MF=android/app/src/main/AndroidManifest.xml
         if ! grep -q 'networkSecurityConfig' $MF; then
           sed -i.bak 's|<application|<application android:networkSecurityConfig="@xml/network_security_config"|' $MF
         fi
 
-        # Add proguard wiring to build.gradle's release buildType — only
-        # if not already present.
         BG=android/app/build.gradle
         if ! grep -q "proguardFiles" $BG; then
-          # Replace the auto-generated `signingConfig` line with a multi-
-          # line block that adds minifyEnabled + proguard files.
-          /usr/bin/env perl -i -pe 'BEGIN{undef $/;} s|signingConfig signingConfigs.debug|signingConfig signingConfigs.release\n            minifyEnabled true\n            shrinkResources true\n            proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"|;' $BG
+          /usr/bin/env perl -i -pe 'BEGIN{undef $/;} s|signingConfig\s*=\s*signingConfigs.debug|signingConfig = signingConfigs.release\n            minifyEnabled = true\n            shrinkResources = true\n            proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"|;' $BG
+        fi
+
+        # Sanity check: Codemagic's android_signing integration should
+        # have populated CM_KEYSTORE_PATH if the keystore name in the
+        # workflow matched an uploaded keystore. Log it so failed-
+        # signing builds show a clear "no keystore was attached" line
+        # in the log.
+        if [ -n "${CM_KEYSTORE_PATH:-}" ]; then
+          echo "[android-signing] keystore injected at $CM_KEYSTORE_PATH"
+        else
+          echo "[android-signing] WARNING: CM_KEYSTORE_PATH is empty." >&2
+          echo "[android-signing] No keystore attached. The AAB will sign with the debug key" >&2
+          echo "[android-signing] and Play Store will reject it. Confirm Codemagic Teams →" >&2
+          echo "[android-signing] Code signing identities → Android keystores has an entry" >&2
+          echo "[android-signing] named 'americantv-keystore'." >&2
         fi
 
     - name: Drop launcher icon sources

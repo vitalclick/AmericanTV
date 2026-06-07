@@ -29,16 +29,18 @@ ANDROID_VARS=(
   GOOGLE_OAUTH_CLIENT_ID_ANDROID
 )
 
-# Production-only: Firebase + icon assets MUST be configured.
+# Production-only: Firebase + Android key fingerprint.
+# Note: APP_ICON_PNG_B64 / APP_ICON_ADAPTIVE_FG_PNG_B64 used to be
+# required, but since 3.0.0+14 the icon masters are committed under
+# mobile/assets/icon/. The env vars still work — if set, they
+# override the committed icons (useful for last-minute brand swaps
+# without a code change). Just no longer mandatory.
 IOS_PROD_VARS=(
   FIREBASE_GOOGLE_SERVICE_INFO_PLIST
-  APP_ICON_PNG_B64
 )
 
 ANDROID_PROD_VARS=(
   FIREBASE_GOOGLE_SERVICES_JSON
-  APP_ICON_PNG_B64
-  APP_ICON_ADAPTIVE_FG_PNG_B64
   ANDROID_RELEASE_SHA256
 )
 
