@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/services/analytics_service.dart';
 import '../application/feed_controller.dart';
 import '../domain/video_summary.dart';
 
@@ -72,7 +73,14 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
           final video = state.videos[index];
           return _VideoTile(
             video: video,
-            onTap: () => context.push('/video/${video.slug}'),
+            onTap: () {
+              ref.read(analyticsServiceProvider).track(
+                'feed_tile_tap',
+                videoId: video.id,
+                payload: {'position': index, 'is_paid': video.isPaid},
+              );
+              context.push('/video/${video.slug}');
+            },
           );
         },
       ),

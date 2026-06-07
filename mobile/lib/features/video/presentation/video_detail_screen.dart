@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../api/api_exception.dart';
+import '../../../core/services/analytics_service.dart';
 import '../../iap/presentation/plan_paywall_screen.dart';
 import '../data/reactions_repository.dart';
 import '../data/video_repository.dart';
@@ -153,10 +154,19 @@ class _DetailBody extends ConsumerWidget {
         return;
       }
       unawaited(repo.recordView(detail.summary.id));
+      ref.read(analyticsServiceProvider).track(
+        'video_play_started',
+        videoId: detail.summary.id,
+        payload: {'is_hls': source.isHls},
+      );
       await navigator.push(
         MaterialPageRoute<void>(
           builder: (_) => VideoPlayerScreen(source: source, title: detail.summary.title),
         ),
+      );
+      ref.read(analyticsServiceProvider).track(
+        'video_play_completed',
+        videoId: detail.summary.id,
       );
     } on ApiException catch (e) {
       messenger.showSnackBar(SnackBar(content: Text(e.message)));
@@ -171,6 +181,12 @@ class _DetailBody extends ConsumerWidget {
     final candidates = detail.accessPlans.where((p) => p.isMobileAvailable).toList()
       ..sort((a, b) => (a.mobilePriceUsd ?? a.priceUsd)
           .compareTo(b.mobilePriceUsd ?? b.priceUsd));
+
+    ref.read(analyticsServiceProvider).track(
+      'paywall_impression',
+      videoId: detail.summary.id,
+      payload: {'plans_available': candidates.length},
+    );
 
     if (candidates.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(

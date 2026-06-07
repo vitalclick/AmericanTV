@@ -100,6 +100,9 @@ Route::group([], function () {
         // Purchases — the only mobile purchase entrypoint.
         Route::post('purchases/iap/verify', 'IapPurchaseController@verify');
         Route::post('purchases/iap/restore', 'IapPurchaseController@restore');
+
+        // Engagement telemetry — batched and best-effort.
+        Route::post('analytics/events', 'AnalyticsController@ingest');
     });
 
     // -------------------- Server-to-server webhooks --------------------

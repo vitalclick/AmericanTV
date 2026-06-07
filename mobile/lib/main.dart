@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'app.dart';
 import 'core/env.dart';
 import 'core/firebase_options.dart';
+import 'core/services/analytics_service.dart';
 import 'core/services/cache_service.dart';
 import 'core/services/purchases_service.dart';
 import 'core/services/push_service.dart';
@@ -32,6 +33,9 @@ Future<void> main() async {
   // their FCM token registered without us needing to remember to watch it
   // from a widget.
   container.read(pushServiceProvider);
+  // Analytics: warm the service early so the first track() call doesn't
+  // race the constructor's timer setup.
+  container.read(analyticsServiceProvider);
 
   // Drop cached feed/video state on sign-out so the next user signing in on
   // the same device doesn't see the previous user's content.
