@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../auth/application/auth_controller.dart';
 import '../../feed/presentation/feed_screen.dart';
 import '../../library/presentation/library_screen.dart';
+import '../../profile/presentation/profile_screen.dart';
 import '../../search/presentation/search_screen.dart';
 
 /// Tabbed shell shown after login. The feed is the only real tab today;
@@ -23,23 +24,14 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text(_titles[_tab]),
-        actions: [
-          IconButton(
-            tooltip: 'Sign out',
-            icon: const Icon(Icons.logout),
-            onPressed: () => ref.read(authControllerProvider.notifier).logout(),
-          ),
-        ],
-      ),
+      appBar: AppBar(title: Text(_titles[_tab])),
       body: IndexedStack(
         index: _tab,
         children: const [
           FeedScreen(),
           SearchScreen(),
           LibraryScreen(),
-          _PlaceholderTab(label: 'Profile', icon: Icons.person_outline),
+          ProfileScreen(),
         ],
       ),
       bottomNavigationBar: NavigationBar(
@@ -56,22 +48,3 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   }
 }
 
-class _PlaceholderTab extends StatelessWidget {
-  const _PlaceholderTab({required this.label, required this.icon});
-  final String label;
-  final IconData icon;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, size: 64),
-          const SizedBox(height: 8),
-          Text('$label — coming soon'),
-        ],
-      ),
-    );
-  }
-}

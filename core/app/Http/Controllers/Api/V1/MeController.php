@@ -8,6 +8,10 @@ use App\Http\Resources\UserResource;
 use App\Models\DeviceToken;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\Password;
+use Illuminate\Validation\ValidationException;
 
 class MeController extends Controller
 {
@@ -23,12 +27,59 @@ class MeController extends Controller
     // client surfaces a clear "not yet available" message.
     public function updateProfile(Request $request): JsonResponse
     {
-        return $this->stub();
+        $user = $request->user();
+
+        $data = $request->validate([
+            'firstname' => ['sometimes', 'string', 'max:60'],
+            'lastname'  => ['sometimes', 'string', 'max:60'],
+            'username'  => ['sometimes', 'nullable', 'string', 'min:3', 'max:60', 'alpha_dash',
+                Rule::unique('users', 'username')->ignore($user->id),
+            ],
+            'bio'       => ['sometimes', 'nullable', 'string', 'max:500'],
+        ]);
+
+        foreach (['firstname', 'lastname', 'username', 'bio'] as $key) {
+            if (array_key_exists($key, $data)) {
+                $user->{$key} = $data[$key];
+            }
+        }
+        $user->save();
+
+        return response()->json([
+            'data' => (new UserResource($user))->toArray($request),
+        ]);
     }
 
     public function changePassword(Request $request): JsonResponse
     {
-        return $this->stub();
+        $rule = Password::min(6);
+        if (gs('secure_password')) {
+            $rule = $rule->mixedCase()->numbers()->symbols()->uncompromised();
+        }
+
+        $data = $request->validate([
+            'current' => ['required', 'string'],
+            'new'     => ['required', 'string', $rule, 'different:current'],
+        ]);
+
+        $user = $request->user();
+        if (!Hash::check($data['current'], $user->password)) {
+            throw ValidationException::withMessages([
+                'current' => ['Current password is incorrect.'],
+            ]);
+        }
+
+        $user->password = Hash::make($data['new']);
+        $user->save();
+
+        // Keep the calling token alive but revoke all others — security
+        // best practice on password change.
+        $callingId = $user->currentAccessToken()?->id;
+        $user->tokens()
+            ->when($callingId, fn ($q) => $q->where('id', '!=', $callingId))
+            ->delete();
+
+        return response()->json([], 204);
     }
 
     public function wallet(Request $request): JsonResponse
