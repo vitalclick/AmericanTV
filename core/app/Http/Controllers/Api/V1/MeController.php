@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\UserResource;
 use App\Models\DeviceToken;
 use App\Models\Transaction;
+use App\Models\UserNotification;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\ResourceCollection;
@@ -167,17 +168,47 @@ class MeController extends Controller
 
     public function notifications(Request $request): JsonResponse
     {
-        return $this->stub();
+        $page = UserNotification::where('user_id', $request->user()->id)
+            ->orderByDesc('id')
+            ->paginate(20);
+
+        $unread = UserNotification::where('user_id', $request->user()->id)
+            ->where('is_read', Status::NO)
+            ->count();
+
+        return response()->json([
+            'data' => $page->getCollection()->map(fn (UserNotification $n) => [
+                'id'         => $n->id,
+                'title'      => $n->title,
+                'click_url'  => $n->click_url === '#' ? null : $n->click_url,
+                'is_read'    => (int) $n->is_read === Status::YES,
+                'created_at' => $n->created_at?->toIso8601String(),
+            ])->values(),
+            'meta' => [
+                'current_page'  => $page->currentPage(),
+                'per_page'      => $page->perPage(),
+                'total'         => $page->total(),
+                'last_page'     => $page->lastPage(),
+                'unread_count'  => $unread,
+            ],
+        ]);
     }
 
     public function markNotificationRead(Request $request, int $id): JsonResponse
     {
-        return $this->stub();
+        $notification = UserNotification::where('user_id', $request->user()->id)
+            ->findOrFail($id);
+        $notification->is_read = Status::YES;
+        $notification->save();
+        return response()->json([], 204);
     }
 
     public function markAllNotificationsRead(Request $request): JsonResponse
     {
-        return $this->stub();
+        UserNotification::where('user_id', $request->user()->id)
+            ->where('is_read', Status::NO)
+            ->update(['is_read' => Status::YES]);
+        return response()->json([], 204);
     }
 
     public function registerDeviceToken(Request $request): JsonResponse
