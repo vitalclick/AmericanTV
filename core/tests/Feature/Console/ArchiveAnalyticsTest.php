@@ -2,6 +2,9 @@
 
 namespace Tests\Feature\Console;
 
+use Aws\CommandInterface;
+use Aws\Result;
+use Aws\S3\S3Client;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -71,6 +74,51 @@ class ArchiveAnalyticsTest extends TestCase
             ->assertExitCode(0);
 
         $this->assertSame(3, DB::table('app_events')->count());
+    }
+
+    public function test_upload_to_calls_putObject_then_prune_clears_archived_rows(): void
+    {
+        $this->seedEvents();
+
+        // Capture the PutObject parameters so we can assert on them after.
+        $captured = null;
+
+        $mock = $this->createMock(S3Client::class);
+        $mock->method('__call')->willReturnCallback(
+            function (string $method, array $args) use (&$captured) {
+                if ($method === 'putObject') {
+                    $captured = $args[0]; // first arg is the params array.
+                    return new Result(['ETag' => '"abc"']);
+                }
+                throw new \RuntimeException("Unexpected S3 call: $method");
+            }
+        );
+
+        $this->app->instance(S3Client::class, $mock);
+
+        $this->artisan(
+            'analytics:archive '
+            . '--from=2026-02-01 --to=2026-04-01 '
+            . '--upload-to=s3://reporting/events/2026-q1/ '
+            . '--then-prune'
+        )->assertExitCode(0);
+
+        $this->assertNotNull($captured, 'putObject was not called');
+        $this->assertSame('reporting', $captured['Bucket']);
+        $this->assertStringStartsWith('events/2026-q1/analytics-archive-', $captured['Key']);
+        $this->assertStringEndsWith('.csv', $captured['Key']);
+        $this->assertSame('text/csv', $captured['ContentType']);
+        $this->assertFileExists($captured['SourceFile']);
+
+        // The two in-range events should have been pruned; the out-of-range
+        // row survives.
+        $this->assertSame(1, DB::table('app_events')->count());
+        $this->assertSame(
+            'out_of_range',
+            DB::table('app_events')->first()->name,
+        );
+
+        File::delete($captured['SourceFile']);
     }
 
     private function seedEvents(): void

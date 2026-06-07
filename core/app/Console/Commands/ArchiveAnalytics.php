@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use Aws\S3\S3Client;
 use Illuminate\Console\Command;
+use Illuminate\Container\Container;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -154,15 +155,20 @@ class ArchiveAnalytics extends Command
         [$_, $bucket, $prefix] = $m;
         $key = trim($prefix, '/') . '/' . basename($localPath);
 
-        $client = new S3Client([
-            'version'     => 'latest',
-            'region'      => env('AWS_DEFAULT_REGION', 'us-east-1'),
-            'credentials' => [
-                'key'    => env('AWS_ACCESS_KEY_ID'),
-                'secret' => env('AWS_SECRET_ACCESS_KEY'),
-            ],
-            'endpoint'    => env('AWS_ENDPOINT_URL'), // null for AWS S3, set for Wasabi / DO Spaces.
-        ]);
+        // Resolve via the container so tests can bind a mock S3Client
+        // without us having to dependency-inject through the artisan
+        // signature.
+        $client = Container::getInstance()->has(S3Client::class)
+            ? Container::getInstance()->make(S3Client::class)
+            : new S3Client([
+                'version'     => 'latest',
+                'region'      => env('AWS_DEFAULT_REGION', 'us-east-1'),
+                'credentials' => [
+                    'key'    => env('AWS_ACCESS_KEY_ID'),
+                    'secret' => env('AWS_SECRET_ACCESS_KEY'),
+                ],
+                'endpoint'    => env('AWS_ENDPOINT_URL'), // null for AWS S3, set for Wasabi / DO Spaces.
+            ]);
 
         try {
             $client->putObject([
