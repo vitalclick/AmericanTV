@@ -168,48 +168,120 @@ abstract class TestCase extends BaseTestCase
 
     /**
      * Set a value at a dotted path on the gs() stub. Builds the
-     * intermediate stdClass tree on demand so a test reaching for
-     * gs('mail_config')->sendgrid->api_key can shape the object once:
+     * intermediate stdClass / array tree on demand:
      *
-     *   $this->gsConfigOverride('mail_config.sendgrid.api_key', 'fake');
+     *   gsConfigOverride('mail_config.sendgrid.api_key', 'fake');
+     *   gsConfigOverride('countries[0].code', 'US');
+     *   gsConfigOverride('plans[0].features[2]', 'premium');
      *
-     * If anything along the path already exists as a non-object, it gets
-     * replaced rather than recursively converted — the test author's
-     * intent is to overwrite, not merge.
+     * Anything along the path that's the wrong shape gets replaced (object
+     * where the path needs an array, or vice versa). Test author's intent
+     * is "set this leaf", so preserving wrong-shape intermediates would
+     * just surface confusing errors at the call site.
      */
     protected function gsConfigOverride(string $dottedPath, mixed $value): void
     {
-        $parts = explode('.', $dottedPath);
-        $top   = array_shift($parts);
-
         $current = Cache::get('GeneralSetting');
         if (! is_object($current)) {
             $current = (object) [];
         }
 
-        if (empty($parts)) {
-            $current->{$top} = $value;
-            Cache::put('GeneralSetting', $current);
-            return;
-        }
-
-        if (! isset($current->{$top}) || ! is_object($current->{$top})) {
-            $current->{$top} = (object) [];
-        }
-        $this->setNested($current->{$top}, $parts, $value);
+        $segments = $this->parsePath($dottedPath);
+        $this->setAtPath($current, $segments, $value);
         Cache::put('GeneralSetting', $current);
     }
 
-    private function setNested(object $target, array $parts, mixed $value): void
+    /**
+     * Parse 'a.b[0].c' into a sequence of segments, each tagged with the
+     * shape expected at that position:
+     *   - ['kind' => 'prop', 'name' => 'a']    -> object property access.
+     *   - ['kind' => 'index', 'name' => 0]     -> array index.
+     */
+    private function parsePath(string $path): array
     {
-        $last = array_pop($parts);
-        $cursor = $target;
-        foreach ($parts as $part) {
-            if (! isset($cursor->{$part}) || ! is_object($cursor->{$part})) {
-                $cursor->{$part} = (object) [];
+        $segments = [];
+        foreach (explode('.', $path) as $part) {
+            if (! preg_match_all('/([A-Za-z0-9_]+)|\[(\d+)\]/', $part, $matches, PREG_SET_ORDER)) {
+                continue;
             }
-            $cursor = $cursor->{$part};
+            foreach ($matches as $m) {
+                if ($m[1] !== '') {
+                    $segments[] = ['kind' => 'prop', 'name' => $m[1]];
+                } else {
+                    $segments[] = ['kind' => 'index', 'name' => (int) $m[2]];
+                }
+            }
         }
-        $cursor->{$last} = $value;
+        return $segments;
+    }
+
+    /**
+     * Recursively walk $cursor along $segments and assign $value at the
+     * leaf. The trick: PHP arrays are copy-on-write, so we can't return
+     * an array "pointer" and expect mutations to propagate back. Instead
+     * the recursion passes $cursor by reference at each level — works
+     * uniformly for both stdClass (handle semantics) and array (cow).
+     *
+     * Build-the-next-container-on-demand logic is per segment kind:
+     *   - prop segment expects $cursor to be an object.
+     *   - index segment expects $cursor to be an array.
+     * Anything that's the wrong shape gets replaced; the test author's
+     * intent is "set this leaf", and silently dropping the call would be
+     * worse than overwriting an intermediate.
+     */
+    private function setAtPath(object|array &$cursor, array $segments, mixed $value): void
+    {
+        if (empty($segments)) return;
+
+        $seg = array_shift($segments);
+        $isLast = empty($segments);
+
+        if ($seg['kind'] === 'prop') {
+            if (! is_object($cursor)) {
+                $cursor = (object) [];
+            }
+            $name = $seg['name'];
+            if ($isLast) {
+                $cursor->{$name} = $value;
+                return;
+            }
+            // Need to descend — ensure the next container shape matches
+            // what the NEXT segment expects.
+            $next = $segments[0];
+            $expectsArray = $next['kind'] === 'index';
+            if ($expectsArray) {
+                if (! isset($cursor->{$name}) || ! is_array($cursor->{$name})) {
+                    $cursor->{$name} = [];
+                }
+            } else {
+                if (! isset($cursor->{$name}) || ! is_object($cursor->{$name})) {
+                    $cursor->{$name} = (object) [];
+                }
+            }
+            $this->setAtPath($cursor->{$name}, $segments, $value);
+            return;
+        }
+
+        // index segment.
+        if (! is_array($cursor)) {
+            $cursor = [];
+        }
+        $idx = $seg['name'];
+        if ($isLast) {
+            $cursor[$idx] = $value;
+            return;
+        }
+        $next = $segments[0];
+        $expectsArray = $next['kind'] === 'index';
+        if ($expectsArray) {
+            if (! isset($cursor[$idx]) || ! is_array($cursor[$idx])) {
+                $cursor[$idx] = [];
+            }
+        } else {
+            if (! isset($cursor[$idx]) || ! is_object($cursor[$idx])) {
+                $cursor[$idx] = (object) [];
+            }
+        }
+        $this->setAtPath($cursor[$idx], $segments, $value);
     }
 }

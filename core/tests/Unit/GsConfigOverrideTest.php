@@ -45,4 +45,23 @@ class GsConfigOverrideTest extends TestCase
         $settings = Cache::get('GeneralSetting');
         $this->assertSame('EUR', $settings->cur_text);
     }
+
+    public function test_array_index_notation_writes_into_a_real_array(): void
+    {
+        $this->gsConfigOverride('countries[0].code', 'US');
+        $this->gsConfigOverride('countries[1].code', 'CA');
+
+        $settings = Cache::get('GeneralSetting');
+        $this->assertIsArray($settings->countries);
+        $this->assertSame('US', $settings->countries[0]->code);
+        $this->assertSame('CA', $settings->countries[1]->code);
+    }
+
+    public function test_mixed_object_and_array_segments(): void
+    {
+        $this->gsConfigOverride('plans[0].features[2]', 'premium');
+
+        $settings = Cache::get('GeneralSetting');
+        $this->assertSame('premium', $settings->plans[0]->features[2]);
+    }
 }
