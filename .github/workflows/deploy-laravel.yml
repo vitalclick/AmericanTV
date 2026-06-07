@@ -50,12 +50,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
-    # Scopes secrets to the "production" environment rather than the
+    # Scopes secrets to the "AmericanTV" environment rather than the
     # repo-wide bucket, so the cPanel credentials sit alongside any
     # other prod-only config and can have protection rules (required
     # reviewers, branch restrictions) layered on independently.
     environment:
-      name: production
+      name: AmericanTV
       url: https://americantv.vip
 
     env:
