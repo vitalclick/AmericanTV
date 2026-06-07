@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../api/api_exception.dart';
 import '../data/upload_notifier_service.dart';
 import '../data/upload_repository.dart';
+import 'publish_video_screen.dart';
 
 class _ResumeCard extends StatelessWidget {
   const _ResumeCard({required this.job, required this.busy, required this.onDiscard});
@@ -215,16 +216,33 @@ class _UploadVideoScreenState extends ConsumerState<UploadVideoScreen> {
                     style: TextStyle(color: Theme.of(context).colorScheme.error),
                   ),
                 ),
-              if (_resultVideoId != null)
+              if (_resultVideoId != null) ...[
                 Padding(
                   padding: const EdgeInsets.only(top: 12),
                   child: Text(
-                    'Upload complete. Visit the web dashboard to add a description, set the category, and publish.',
+                    'Upload complete. Set the category + visibility to publish.',
                     style: TextStyle(
                       color: Theme.of(context).colorScheme.primary,
                     ),
                   ),
                 ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    final id = _resultVideoId!;
+                    final ok = await Navigator.of(context).push<bool>(
+                      MaterialPageRoute(
+                        builder: (_) => PublishVideoScreen(videoId: id),
+                      ),
+                    );
+                    if (ok == true && mounted) {
+                      Navigator.of(context).pop();
+                    }
+                  },
+                  icon: const Icon(Icons.publish_outlined),
+                  label: const Text('Continue to publish'),
+                ),
+              ],
               const Spacer(),
               FilledButton(
                 onPressed: (_file == null || _busy) ? null : _upload,

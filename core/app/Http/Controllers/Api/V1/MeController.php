@@ -317,6 +317,57 @@ class MeController extends Controller
      * uploader-supplied uniqueId. Lets the mobile client resume after
      * background pause or network drop without re-sending everything.
      */
+    /**
+     * Mobile-native publish: sets category + visibility + tags + status =
+     * PUBLISHED in one call. Mirrors VideoManager::visibilitySubmit but
+     * accepts JSON (rather than a form post) and allows zero tags so
+     * mobile creators can publish without forcing a tag taxonomy on them.
+     */
+    public function publishVideo(Request $request, int $id): JsonResponse
+    {
+        \Auth::guard('web')->setUser($request->user());
+
+        $data = $request->validate([
+            'category_id' => ['required', 'integer', 'exists:categories,id'],
+            'visibility'  => ['required', 'in:0,1'],
+            'tags'        => ['nullable', 'array'],
+            'tags.*'      => ['string', 'max:32'],
+        ]);
+
+        $video = \App\Models\Video::where('step', '>=', Status::SECOND_STEP)
+            ->where('user_id', $request->user()->id)
+            ->findOrFail($id);
+
+        $video->category_id = (int) $data['category_id'];
+        $video->visibility  = (int) $data['visibility'];
+
+        // Lift the step + flip status to PUBLISHED if this is the first
+        // time the video is being made publishable.
+        if ((int) $video->status === Status::NO || $video->step <= Status::THIRD_STEP) {
+            $video->step   = Status::FOURTH_STEP;
+            $video->status = Status::PUBLISHED;
+        }
+        $video->save();
+
+        // Replace tags atomically so the API call is idempotent.
+        $video->tags()->delete();
+        foreach (($data['tags'] ?? []) as $tag) {
+            $row = new \App\Models\VideoTag();
+            $row->video_id = $video->id;
+            $row->tag = $tag;
+            $row->save();
+        }
+
+        return response()->json([
+            'data' => [
+                'id'         => $video->id,
+                'slug'       => $video->slug,
+                'visibility' => (int) $video->visibility,
+                'status'     => (int) $video->status,
+            ],
+        ]);
+    }
+
     public function inventoryUploadChunks(Request $request, string $uniqueId): JsonResponse
     {
         $request->validate([

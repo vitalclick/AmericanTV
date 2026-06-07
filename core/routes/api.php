@@ -94,6 +94,7 @@ Route::group([], function () {
         Route::post('me/videos/chunk',            'MeController@uploadVideoChunk');
         Route::post('me/videos/merge',            'MeController@mergeVideoChunks');
         Route::patch('me/videos/{id}/details',    'MeController@submitVideoDetails');
+        Route::post('me/videos/{id}/publish',     'MeController@publishVideo');
 
         // Purchases — the only mobile purchase entrypoint.
         Route::post('purchases/iap/verify', 'IapPurchaseController@verify');
