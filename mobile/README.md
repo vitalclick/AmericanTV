@@ -45,6 +45,41 @@ exact snippets to paste into `android/app/src/main/AndroidManifest.xml`,
 - Sign in with Apple capability
 - minSdkVersion 23, targetSdkVersion 34
 
+## Configuring Firebase (FCM + Crashlytics + Analytics)
+
+Firebase config is **not** committed — `lib/core/firebase_options.dart`
+ships as a `REPLACE_ME` stub and `Firebase.initializeApp()` is skipped
+until you wire it up. To configure:
+
+```bash
+# One-time install of the FlutterFire CLI.
+dart pub global activate flutterfire_cli
+
+# From mobile/, point at the Firebase project that will host the iOS +
+# Android apps. The CLI creates both apps if they don't exist, downloads
+# google-services.json into android/app/, GoogleService-Info.plist into
+# ios/Runner/, and rewrites lib/core/firebase_options.dart.
+flutterfire configure \
+  --project=<your-firebase-project-id> \
+  --platforms=ios,android \
+  --ios-bundle-id=com.americantv \
+  --android-package-name=com.americantv
+```
+
+After this runs, `DefaultFirebaseOptions.isConfigured` returns `true`
+and the app initializes Firebase on next launch. To verify:
+
+```bash
+flutter run
+# Look for "Firebase not configured" in the debug console. If it's gone,
+# FCM and friends are live.
+```
+
+To enable push permissions on iOS, open `ios/Runner.xcworkspace` in Xcode
+and add the Push Notifications + Background Modes capabilities to the
+Runner target (Background Modes → Remote notifications). Then trigger a
+test push from the Firebase Console → Cloud Messaging.
+
 ## Generating the typed API client
 
 We do **not** check in the generated client. Regenerate after each OpenAPI
