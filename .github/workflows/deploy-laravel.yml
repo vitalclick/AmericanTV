@@ -1,0 +1,238 @@
+name: Deploy Laravel to cPanel
+
+# Deploys the Laravel app under `core/` to the cPanel host. The docroot
+# layout on the host mirrors the repo root:
+#
+#   <docroot>/index.php   <-- bootstraps Laravel from core/
+#   <docroot>/.htaccess   <-- URL rewriting
+#   <docroot>/core/       <-- Laravel app (this workflow rsyncs into here)
+#   <docroot>/.well-known/ <-- AASA + assetlinks.json (left alone)
+#   <docroot>/assets/      <-- static assets (left alone)
+#
+# Auto-runs on push to main when core/ or this workflow change.
+# Manual dispatch lets you skip migrations / run the demo seeder.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'core/**'
+      - 'index.php'
+      - '.htaccess'
+      - '.github/workflows/deploy-laravel.yml'
+  workflow_dispatch:
+    inputs:
+      run_migrations:
+        description: 'Run database migrations'
+        required: false
+        type: boolean
+        default: true
+      seed_demo_account:
+        description: 'Re-run AppReviewDemoSeeder'
+        required: false
+        type: boolean
+        default: false
+      clear_route_cache_only:
+        description: 'Skip rsync — just clear caches on the host'
+        required: false
+        type: boolean
+        default: false
+
+# A single in-progress deploy at a time. Subsequent pushes queue
+# rather than canceling, so a hotfix push doesn't trample an
+# already-finishing prior deploy.
+concurrency:
+  group: deploy-laravel-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    # Scopes secrets to the "AmericanTV" environment rather than the
+    # repo-wide bucket, so the cPanel credentials sit alongside any
+    # other prod-only config and can have protection rules (required
+    # reviewers, branch restrictions) layered on independently.
+    environment:
+      name: AmericanTV
+      url: https://americantv.vip
+
+    env:
+      # Required secrets (set in repo Settings → Secrets and variables → Actions):
+      #   CPANEL_HOST                e.g. s4217.fra1.stableserver.net
+      #   CPANEL_USER                e.g. america1
+      #   CPANEL_SSH_PORT            e.g. 22 (or whatever the host uses)
+      #   CPANEL_SSH_KEY             private OpenSSH key (whole multiline blob)
+      #   CPANEL_DEPLOY_PATH         e.g. /home/america1/public_html
+      #   CPANEL_PHP_BIN             optional, full path to PHP CLI on the
+      #                              host. Defaults to `php` which works on
+      #                              most shared hosts. Set to e.g.
+      #                              /opt/cpanel/ea-php83/root/usr/bin/php if
+      #                              `php` resolves to the wrong version.
+      DEPLOY_PATH: ${{ secrets.CPANEL_DEPLOY_PATH }}
+      SSH_OPTS: -p ${{ secrets.CPANEL_SSH_PORT }} -o StrictHostKeyChecking=no
+      PHP_BIN: ${{ secrets.CPANEL_PHP_BIN || 'php' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP 8.3
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, intl, gd, bcmath, exif
+          tools: composer:v2
+          coverage: none
+
+      - name: Cache Composer
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/composer
+          key: composer-prod-${{ hashFiles('core/composer.lock') }}
+          restore-keys: composer-prod-
+
+      - name: Install production Composer dependencies
+        # --no-dev: ships without phpunit, pint, debugbar, etc.
+        # --optimize-autoloader: rebuilds the autoloader for ~3x faster
+        # cold-class-load on production.
+        # --classmap-authoritative: bypasses runtime psr-4 lookup entirely;
+        # safe because we never write classes after deploy.
+        run: |
+          cd core
+          composer install \
+            --no-dev \
+            --optimize-autoloader \
+            --classmap-authoritative \
+            --no-interaction \
+            --no-progress
+
+      - name: Install rsync
+        run: sudo apt-get update -qq && sudo apt-get install -qq -y rsync
+
+      - name: Setup SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.CPANEL_SSH_KEY }}
+
+      - name: Verify SSH connectivity
+        run: |
+          ssh ${{ env.SSH_OPTS }} \
+            ${{ secrets.CPANEL_USER }}@${{ secrets.CPANEL_HOST }} \
+            "echo 'SSH OK on '\$(hostname); ${{ env.PHP_BIN }} -r 'echo PHP_VERSION, PHP_EOL;'"
+
+      - name: Take site into maintenance mode
+        # `artisan down` writes storage/framework/maintenance.php — the
+        # docroot index.php checks for it and returns a friendly 503
+        # to live traffic. Skipped on the cache-only branch since no
+        # bytes are changing.
+        if: ${{ inputs.clear_route_cache_only != true }}
+        run: |
+          ssh ${{ env.SSH_OPTS }} \
+            ${{ secrets.CPANEL_USER }}@${{ secrets.CPANEL_HOST }} \
+            "cd $DEPLOY_PATH/core && $PHP_BIN artisan down --render='errors::503' --retry=60 || true"
+
+      - name: Rsync core/ to host
+        if: ${{ inputs.clear_route_cache_only != true }}
+        # Excludes preserve the host's stateful + secret data:
+        #   .env                          - production credentials
+        #   storage/{app,framework,logs}  - uploads, runtime caches, logs
+        #   bootstrap/cache/              - regenerated by `artisan optimize`
+        #   vendor/.cache, tests/         - build / dev artifacts
+        # --delete removes files on host that no longer exist in repo,
+        # so renames don't leave stale source behind.
+        run: |
+          rsync -avz --delete \
+            --exclude='.env' \
+            --exclude='.env.*' \
+            --exclude='storage/app/' \
+            --exclude='storage/framework/cache/' \
+            --exclude='storage/framework/sessions/' \
+            --exclude='storage/framework/views/' \
+            --exclude='storage/logs/' \
+            --exclude='bootstrap/cache/*.php' \
+            --exclude='.git/' \
+            --exclude='tests/' \
+            --exclude='phpunit.xml' \
+            --exclude='*.bak' \
+            -e "ssh ${{ env.SSH_OPTS }}" \
+            core/ \
+            ${{ secrets.CPANEL_USER }}@${{ secrets.CPANEL_HOST }}:$DEPLOY_PATH/core/
+
+      - name: Rsync docroot files (index.php / .htaccess)
+        if: ${{ inputs.clear_route_cache_only != true }}
+        run: |
+          rsync -avz \
+            -e "ssh ${{ env.SSH_OPTS }}" \
+            index.php .htaccess \
+            ${{ secrets.CPANEL_USER }}@${{ secrets.CPANEL_HOST }}:$DEPLOY_PATH/
+
+      - name: Run post-deploy commands
+        run: |
+          ssh ${{ env.SSH_OPTS }} \
+            ${{ secrets.CPANEL_USER }}@${{ secrets.CPANEL_HOST }} bash <<EOF
+            set -e
+            cd $DEPLOY_PATH/core
+
+            $PHP_BIN artisan optimize:clear
+
+            if [ "${{ inputs.run_migrations || 'true' }}" = "true" ] && [ "${{ inputs.clear_route_cache_only }}" != "true" ]; then
+              $PHP_BIN artisan migrate --force
+            fi
+
+            if [ "${{ inputs.seed_demo_account }}" = "true" ]; then
+              $PHP_BIN artisan db:seed --class=AppReviewDemoSeeder --force
+            fi
+
+            # Warm caches AFTER migrations land so a column added during
+            # migration shows up in the cached config / routes / views.
+            $PHP_BIN artisan config:cache
+            $PHP_BIN artisan route:cache
+            $PHP_BIN artisan view:cache
+            $PHP_BIN artisan storage:link || true
+          EOF
+
+      - name: Bring site back up
+        if: ${{ always() && inputs.clear_route_cache_only != true }}
+        # `always()` so a failed migration / cache-warm leaves us out of
+        # maintenance — better to show a 500 than a perpetual 503.
+        run: |
+          ssh ${{ env.SSH_OPTS }} \
+            ${{ secrets.CPANEL_USER }}@${{ secrets.CPANEL_HOST }} \
+            "cd $DEPLOY_PATH/core && $PHP_BIN artisan up || true"
+
+      - name: Health check
+        run: |
+          # Probe the public root endpoint (added in commit ccf3eee).
+          # 5-second cache warmup before probing; the route:cache step
+          # above invalidated everything.
+          sleep 5
+          for attempt in 1 2 3; do
+            STATUS=$(curl -s -o /tmp/body -w "%{http_code}" https://americantv.vip/api/v1 || echo 000)
+            if [ "$STATUS" = "200" ]; then
+              echo "✓ /api/v1 healthy (HTTP $STATUS)"
+              head -c 200 /tmp/body && echo
+              exit 0
+            fi
+            echo "attempt $attempt: HTTP $STATUS — retrying in 5s"
+            sleep 5
+          done
+          echo "FATAL: /api/v1 did not return 200 after 3 attempts"
+          head -c 500 /tmp/body
+          exit 1
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## Deploy summary"
+            echo
+            echo "| Step | Result |"
+            echo "|---|---|"
+            echo "| Host | \`${{ secrets.CPANEL_HOST }}\` |"
+            echo "| Path | \`$DEPLOY_PATH/core\` |"
+            echo "| Migrations | ${{ inputs.run_migrations || 'true' }} |"
+            echo "| Demo seed | ${{ inputs.seed_demo_account || 'false' }} |"
+            echo "| Cache-only | ${{ inputs.clear_route_cache_only || 'false' }} |"
+            echo "| Commit | \`${{ github.sha }}\` |"
+          } >> $GITHUB_STEP_SUMMARY
