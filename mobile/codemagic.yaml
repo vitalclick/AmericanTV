@@ -44,11 +44,45 @@ definitions:
       script: |
         cd $CM_BUILD_DIR/mobile
         # iOS background upload handler.
-        cp native/ios/BackgroundUploadHandler.swift ios/Runner/
-        # Android background upload Kotlin shim.
-        mkdir -p android/app/src/main/kotlin/vip/americantv/upload
-        cp native/android/BackgroundUploadHandler.kt \
-           android/app/src/main/kotlin/vip/americantv/upload/
+        if [ -d ios/Runner ]; then
+          cp native/ios/BackgroundUploadHandler.swift ios/Runner/
+        fi
+        # Android background upload Kotlin shim — package matches the
+        # applicationId (com.americantv.app.upload).
+        if [ -d android/app/src/main/kotlin ]; then
+          mkdir -p android/app/src/main/kotlin/com/americantv/app/upload
+          cp native/android/BackgroundUploadHandler.kt \
+             android/app/src/main/kotlin/com/americantv/app/upload/
+        fi
+
+    - name: Rewrite platform identifiers
+      # flutter create with --org com.americantv would produce
+      # com.americantv.americantv on both platforms. We need:
+      #   Android applicationId/namespace: com.americantv.app
+      #   iOS    PRODUCT_BUNDLE_IDENTIFIER: com.americantv.userapp
+      # Each sed is guarded so the script is safe on either platform-only
+      # workflow.
+      script: |
+        cd $CM_BUILD_DIR/mobile
+
+        if [ -f android/app/build.gradle ]; then
+          sed -i.bak "s/applicationId \"[^\"]*\"/applicationId \"com.americantv.app\"/" \
+            android/app/build.gradle
+          sed -i.bak "s/namespace \"[^\"]*\"/namespace \"com.americantv.app\"/" \
+            android/app/build.gradle
+        fi
+        if [ -f android/app/build.gradle.kts ]; then
+          sed -i.bak "s/applicationId = \"[^\"]*\"/applicationId = \"com.americantv.app\"/" \
+            android/app/build.gradle.kts
+          sed -i.bak "s/namespace = \"[^\"]*\"/namespace = \"com.americantv.app\"/" \
+            android/app/build.gradle.kts
+        fi
+
+        if [ -f ios/Runner.xcodeproj/project.pbxproj ]; then
+          sed -i.bak \
+            "s/PRODUCT_BUNDLE_IDENTIFIER = [^;]*;/PRODUCT_BUNDLE_IDENTIFIER = com.americantv.userapp;/" \
+            ios/Runner.xcodeproj/project.pbxproj
+        fi
 
     - name: Resolve dependencies
       script: |

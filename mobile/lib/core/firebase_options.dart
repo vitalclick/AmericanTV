@@ -38,7 +38,7 @@ class DefaultFirebaseOptions {
     messagingSenderId: 'REPLACE_ME',
     projectId: 'REPLACE_ME',
     storageBucket: 'REPLACE_ME',
-    iosBundleId: 'com.americantv',
+    iosBundleId: 'com.americantv.userapp',
   );
 
   static bool get isConfigured =>

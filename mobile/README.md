@@ -21,6 +21,12 @@ cd mobile
 
 # Generate the native projects. The .dart source already in lib/ overrides
 # the placeholder main.dart that flutter create produces.
+#
+# Note: the iOS bundle ID and Android package name differ on purpose
+# (App Store and Play Store records were created independently). The
+# flutter create --org sets a default; the codemagic pipeline rewrites
+# the per-platform identifiers via xcrun + gradle properties. For local
+# development the default works as long as you don't try to upload.
 flutter create . \
   --org com.americantv \
   --project-name americantv \
@@ -62,8 +68,8 @@ dart pub global activate flutterfire_cli
 flutterfire configure \
   --project=<your-firebase-project-id> \
   --platforms=ios,android \
-  --ios-bundle-id=com.americantv \
-  --android-package-name=com.americantv
+  --ios-bundle-id=com.americantv.userapp \
+  --android-package-name=com.americantv.app
 ```
 
 After this runs, `DefaultFirebaseOptions.isConfigured` returns `true`
