@@ -6,8 +6,10 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
-final uploadNotifierServiceProvider = Provider<UploadNotifierService>((_) {
-  return UploadNotifierService();
+import 'background_upload_channel.dart';
+
+final uploadNotifierServiceProvider = Provider<UploadNotifierService>((ref) {
+  return UploadNotifierService(ref.read(backgroundUploadChannelProvider));
 });
 
 /// Keeps an in-flight upload alive when the user navigates away from the
@@ -25,12 +27,24 @@ final uploadNotifierServiceProvider = Provider<UploadNotifierService>((_) {
 /// haven't shipped. Resumable uploads (see UploadRepository.resume) cover
 /// the case where the OS does kill us mid-upload.
 class UploadNotifierService {
+  UploadNotifierService(this._bg);
+
   static const _notificationId = 1001;
   static const _channelId = 'uploads';
   static const _channelName = 'Video uploads';
 
+  final BackgroundUploadChannel _bg;
   final FlutterLocalNotificationsPlugin _plugin = FlutterLocalNotificationsPlugin();
   bool _initialized = false;
+
+  // Background-event subscription details — set when an upload begins so we
+  // can reflect WorkManager retries / URLSession progress in the system
+  // notification without the foreground driver having to push every update.
+  StreamSubscription<BackgroundUploadEvent>? _eventsSub;
+  String? _activeUniqueId;
+  String? _activeTitle;
+  int _activeTotalChunks = 0;
+  final Set<int> _completedIndices = <int>{};
 
   Future<void> _ensureInit() async {
     if (_initialized) return;
@@ -53,18 +67,25 @@ class UploadNotifierService {
     }
   }
 
-  Future<void> begin({required String title}) async {
+  Future<void> begin({
+    required String title,
+    String? uniqueId,
+    int totalChunks = 0,
+  }) async {
     await _ensureInit();
     unawaited(WakelockPlus.enable());
     await _notify(title: title, progress: 0);
+    _subscribeToPlatformEvents(uniqueId: uniqueId, title: title, totalChunks: totalChunks);
   }
 
   Future<void> update({required String title, required double progress}) async {
+    _activeTitle = title; // keep title fresh for platform-driven updates.
     await _notify(title: title, progress: progress);
   }
 
   Future<void> finish({required bool success, String? finalMessage}) async {
     unawaited(WakelockPlus.disable());
+    await _unsubscribeFromPlatformEvents();
     if (!_initialized) return;
     if (success) {
       await _plugin.show(
@@ -81,6 +102,42 @@ class UploadNotifierService {
         _details(progress: 0, ongoing: false),
       );
     }
+  }
+
+  void _subscribeToPlatformEvents({
+    required String? uniqueId,
+    required String title,
+    required int totalChunks,
+  }) {
+    if (uniqueId == null || totalChunks <= 0 || !_bg.isSupported) return;
+
+    // Defensive: cancel any previous subscription before we start a new one.
+    unawaited(_eventsSub?.cancel());
+
+    _activeUniqueId = uniqueId;
+    _activeTitle = title;
+    _activeTotalChunks = totalChunks;
+    _completedIndices.clear();
+
+    _eventsSub = _bg.events().listen((event) {
+      if (event.uniqueId != _activeUniqueId) return;
+      if (event.kind != 'completed') return;
+      _completedIndices.add(event.index);
+      final progress = _completedIndices.length / _activeTotalChunks;
+      // Fire-and-forget — the notification plugin handles dedupe via
+      // onlyAlertOnce, so flooding updates from WorkManager retries is
+      // visually quiet.
+      unawaited(_notify(title: _activeTitle ?? 'video', progress: progress));
+    });
+  }
+
+  Future<void> _unsubscribeFromPlatformEvents() async {
+    await _eventsSub?.cancel();
+    _eventsSub = null;
+    _activeUniqueId = null;
+    _activeTitle = null;
+    _activeTotalChunks = 0;
+    _completedIndices.clear();
   }
 
   Future<void> cancel() async {

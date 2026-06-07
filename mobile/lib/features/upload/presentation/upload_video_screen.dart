@@ -121,7 +121,11 @@ class _UploadVideoScreenState extends ConsumerState<UploadVideoScreen> {
         _title.text.trim().isEmpty
         ? (_file?.uri.pathSegments.last ?? 'video')
         : _title.text.trim();
-    await notifier.begin(title: displayTitle);
+    await notifier.begin(
+      title: displayTitle,
+      uniqueId: _resumeJob?.uniqueId,
+      totalChunks: _resumeJob?.totalChunks ?? 0,
+    );
 
     try {
       final repo = ref.read(uploadRepositoryProvider);
