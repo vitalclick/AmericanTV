@@ -165,4 +165,51 @@ abstract class TestCase extends BaseTestCase
         }
         Cache::put('GeneralSetting', $current);
     }
+
+    /**
+     * Set a value at a dotted path on the gs() stub. Builds the
+     * intermediate stdClass tree on demand so a test reaching for
+     * gs('mail_config')->sendgrid->api_key can shape the object once:
+     *
+     *   $this->gsConfigOverride('mail_config.sendgrid.api_key', 'fake');
+     *
+     * If anything along the path already exists as a non-object, it gets
+     * replaced rather than recursively converted — the test author's
+     * intent is to overwrite, not merge.
+     */
+    protected function gsConfigOverride(string $dottedPath, mixed $value): void
+    {
+        $parts = explode('.', $dottedPath);
+        $top   = array_shift($parts);
+
+        $current = Cache::get('GeneralSetting');
+        if (! is_object($current)) {
+            $current = (object) [];
+        }
+
+        if (empty($parts)) {
+            $current->{$top} = $value;
+            Cache::put('GeneralSetting', $current);
+            return;
+        }
+
+        if (! isset($current->{$top}) || ! is_object($current->{$top})) {
+            $current->{$top} = (object) [];
+        }
+        $this->setNested($current->{$top}, $parts, $value);
+        Cache::put('GeneralSetting', $current);
+    }
+
+    private function setNested(object $target, array $parts, mixed $value): void
+    {
+        $last = array_pop($parts);
+        $cursor = $target;
+        foreach ($parts as $part) {
+            if (! isset($cursor->{$part}) || ! is_object($cursor->{$part})) {
+                $cursor->{$part} = (object) [];
+            }
+            $cursor = $cursor->{$part};
+        }
+        $cursor->{$last} = $value;
+    }
 }
