@@ -98,14 +98,26 @@ EOF
 fi
 
 # ----- shape checks ------------------------------------------------------
-# API_BASE_URL must be HTTPS in production. App Store / Play Store both
-# reject builds with cleartext API hosts.
-if [[ "$WORKFLOW" == "ios-app-store" || "$WORKFLOW" == "android-production" ]]; then
-  if [[ "$API_BASE_URL" != https://* ]]; then
-    echo "[preflight] FATAL: API_BASE_URL='$API_BASE_URL' is not HTTPS." >&2
-    echo "[preflight] App Store / Play Store reject cleartext API hosts." >&2
-    exit 1
-  fi
+# API_BASE_URL must be HTTPS on ALL workflows. iOS App Transport Security
+# blocks cleartext at runtime regardless of whether the build is going to
+# TestFlight or the App Store — a TestFlight install with a cleartext
+# API URL would build successfully and then fail every API call.
+if [[ "$API_BASE_URL" != https://* ]]; then
+  echo "[preflight] FATAL: API_BASE_URL='$API_BASE_URL' is not HTTPS." >&2
+  echo "[preflight] iOS ATS blocks cleartext API calls at runtime even on" >&2
+  echo "[preflight] TestFlight builds. Use https://… in the env group." >&2
+  exit 1
+fi
+
+# BUILD_VERSION must be a valid SemVer (X.Y.Z, optionally with -prerelease)
+# or App Store Connect / Play Console reject the upload at step 22 — but
+# we've already burned 20 minutes of build time by then. Catch typos
+# like 1.0.O (capital O) or 1.0 (missing patch) here.
+if ! [[ "$BUILD_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+  echo "[preflight] FATAL: BUILD_VERSION='$BUILD_VERSION' is not valid SemVer." >&2
+  echo "[preflight] Expected MAJOR.MINOR.PATCH (e.g. 1.2.3), optionally with" >&2
+  echo "[preflight] a -prerelease suffix (e.g. 1.2.3-beta.1)." >&2
+  exit 1
 fi
 
 # ANDROID_RELEASE_SHA256 must look like a real fingerprint, not the
