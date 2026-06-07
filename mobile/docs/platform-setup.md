@@ -162,3 +162,45 @@ The Swift bridge is checked in at `mobile/native/ios/BackgroundUploadHandler.swi
 Without the wiring above, the Dart side falls through cleanly to the
 in-process upload (wakelock + progress notification), so the feature
 degrades gracefully.
+
+### Background uploads (Android)
+
+`BackgroundUploadHandler.kt` is checked in at
+`mobile/native/android/BackgroundUploadHandler.kt`. After `flutter create`:
+
+1. Copy it into the generated Android Kotlin source tree:
+   ```
+   mkdir -p android/app/src/main/kotlin/vip/americantv/upload
+   cp ../native/android/BackgroundUploadHandler.kt \
+      android/app/src/main/kotlin/vip/americantv/upload/
+   ```
+2. Edit `android/app/src/main/kotlin/com/americantv/MainActivity.kt`:
+
+   ```kotlin
+   import io.flutter.embedding.android.FlutterActivity
+   import io.flutter.embedding.engine.FlutterEngine
+   import vip.americantv.upload.BackgroundUploadHandler
+
+   class MainActivity : FlutterActivity() {
+     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+       super.configureFlutterEngine(flutterEngine)
+       BackgroundUploadHandler().onAttachedToEngine(
+         flutterEngine.dartExecutor.binaryMessenger,
+         applicationContext,
+       )
+     }
+   }
+   ```
+
+3. Add WorkManager + OkHttp to `android/app/build.gradle`:
+
+   ```gradle
+   dependencies {
+     implementation 'androidx.work:work-runtime-ktx:2.9.1'
+     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+   }
+   ```
+
+WorkManager survives app death and resumes scheduled chunk uploads when
+the device comes back online — the Android counterpart to the iOS
+URLSession background session.
