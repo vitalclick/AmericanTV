@@ -59,6 +59,16 @@ GoogleService-Info.plist
 **/GoogleService-Info.plist
 ios/Runner/GoogleService-Info.plist
 
+# Android signing materials. NEVER commit these — they get uploaded to
+# Codemagic's encrypted code-signing storage. Losing them means the
+# next AAB Play Store sees won't validate.
+*.jks
+*.keystore
+key.properties
+android/key.properties
+android/app/upload-keystore.jks
+android/app/key.properties
+
 # OS
 .DS_Store
 Thumbs.db

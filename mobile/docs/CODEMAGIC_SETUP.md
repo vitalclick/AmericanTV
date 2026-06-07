@@ -51,20 +51,74 @@ Required to upload the AAB to internal / production tracks.
 
 ## 4. Android keystore
 
-Required to sign release AABs.
+Required to sign release AABs. **The keystore file MUST NOT be
+committed to git** — `mobile/.gitignore` already blocks `*.jks` and
+`*.keystore`, but the discipline matters: losing this file means the
+next AAB Play Store sees won't validate, and there's no recovery path
+short of re-publishing as a new app.
 
-1. On your laptop:
-   ```sh
-   keytool -genkey -v -keystore americantv-release.keystore \
-     -alias americantv -keyalg RSA -keysize 4096 -validity 25000
-   ```
-2. Codemagic Teams → **Code signing identities → Android keystores** →
-   Upload.
-3. Set the reference name to **`americantv-keystore`** (matches
-   `codemagic.yaml`'s `android_signing` entry).
-4. Save the keystore file + password + key alias + key password somewhere
-   safe (1Password, Bitwarden, etc.) — losing this means the next AAB
-   you upload will be rejected by Play Store as a new app.
+### If you already have a keystore (the live one)
+
+The repo is configured for an upload keystore with alias **`uploadkey`**
+(the standard alias Android Studio generates). If yours uses a different
+alias, override `CM_KEYSTORE_ALIAS` in the env group.
+
+1. Codemagic Teams → **Code signing identities → Android keystores** →
+   **Upload**.
+2. **Reference name**: `americantv-keystore` (must match `codemagic.yaml`'s
+   `android_signing` entry).
+3. Upload the `.jks` file.
+4. **Keystore password**: provided by whoever generated the keystore.
+5. **Key alias**: `uploadkey`.
+6. **Key password**: usually the same as the keystore password.
+7. Click **Save**.
+
+### Extracting the SHA-256 fingerprint
+
+The `assetlinks.json` endpoint serves this fingerprint so Android App
+Links can verify the domain owns the app. The Laravel `WellKnownController`
+reads it from `ANDROID_RELEASE_SHA256` in the production `.env`:
+
+```sh
+# Run locally with the keystore file at hand; Codemagic doesn't need
+# to know this value.
+keytool -list -v -keystore /path/to/upload-keystore.jks -alias uploadkey \
+  | grep "SHA256:"
+```
+
+Output looks like:
+
+```
+SHA256: AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99
+```
+
+Paste the value (after `SHA256:`, including the colons) into the
+Laravel `.env` as:
+
+```
+ANDROID_RELEASE_SHA256="AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99"
+```
+
+Apply via `php artisan config:clear` then verify with:
+
+```sh
+curl https://americantv.vip/.well-known/assetlinks.json | jq
+```
+
+### If you need to generate a fresh keystore
+
+Only if the live `uploadkey.jks` is genuinely lost AND the Play Store
+record for `com.americantv.app` is brand-new (i.e. nothing's been
+signed yet). On an existing app, re-keying requires Google's Play App
+Signing key reset which is an Authentication-Required process.
+
+```sh
+keytool -genkey -v -keystore upload-keystore.jks \
+  -alias uploadkey -keyalg RSA -keysize 4096 -validity 25000
+```
+
+Save the .jks + password to 1Password under "AmericanTV Android
+Upload Keystore" before anything else.
 
 ## 5. Environment variable group
 
