@@ -38,10 +38,11 @@ definitions:
         flutter --version
         dart --version
 
-    - name: Materialize platform projects
-      # The android/ and ios/ directories aren't in version control; flutter
-      # create generates them deterministically, then we layer the native
-      # shim files on top. See mobile/docs/platform-setup.md.
+    - name: Ensure platform projects exist
+      # The android/ and ios/ directories ARE in version control from
+      # 3.0.0+14 onward, so this is a safety net for fresh clones or
+      # platform additions. --no-overwrite means existing files are
+      # untouched; flutter only creates what's missing.
       script: |
         cd $CM_BUILD_DIR/mobile
         flutter create . \
@@ -232,27 +233,23 @@ definitions:
       script: |
         cd $CM_BUILD_DIR/mobile
 
-        if [ -f android/app/build.gradle ]; then
-          sed -i.bak "s/applicationId \"[^\"]*\"/applicationId \"com.americantv.app\"/" \
-            android/app/build.gradle
-          sed -i.bak "s/namespace \"[^\"]*\"/namespace \"com.americantv.app\"/" \
-            android/app/build.gradle
-          grep -q 'applicationId "com.americantv.app"' android/app/build.gradle || {
-            echo "FATAL: applicationId rewrite failed in android/app/build.gradle." >&2
-            grep "applicationId" android/app/build.gradle >&2 || true
+        # Flutter 3.24+ generates Groovy build.gradle using Kotlin-style
+        # `applicationId = "..."` assignments rather than the older
+        # `applicationId "..."` (no equals). Try both with sed; only
+        # one of the two patches lands per file.
+        for GRADLE in android/app/build.gradle android/app/build.gradle.kts; do
+          [ -f "$GRADLE" ] || continue
+          sed -i.bak "s/applicationId = \"[^\"]*\"/applicationId = \"com.americantv.app\"/" "$GRADLE"
+          sed -i.bak "s/applicationId \"[^\"]*\"/applicationId \"com.americantv.app\"/" "$GRADLE"
+          sed -i.bak "s/namespace = \"[^\"]*\"/namespace = \"com.americantv.app\"/" "$GRADLE"
+          sed -i.bak "s/namespace \"[^\"]*\"/namespace \"com.americantv.app\"/" "$GRADLE"
+          # Accept either syntax post-rewrite.
+          grep -qE 'applicationId\s*=?\s*"com\.americantv\.app"' "$GRADLE" || {
+            echo "FATAL: applicationId rewrite failed in $GRADLE." >&2
+            grep "applicationId" "$GRADLE" >&2 || true
             exit 1
           }
-        fi
-        if [ -f android/app/build.gradle.kts ]; then
-          sed -i.bak "s/applicationId = \"[^\"]*\"/applicationId = \"com.americantv.app\"/" \
-            android/app/build.gradle.kts
-          sed -i.bak "s/namespace = \"[^\"]*\"/namespace = \"com.americantv.app\"/" \
-            android/app/build.gradle.kts
-          grep -q 'applicationId = "com.americantv.app"' android/app/build.gradle.kts || {
-            echo "FATAL: applicationId rewrite failed in android/app/build.gradle.kts." >&2
-            exit 1
-          }
-        fi
+        done
 
         if [ -f ios/Runner.xcodeproj/project.pbxproj ]; then
           sed -i.bak \
