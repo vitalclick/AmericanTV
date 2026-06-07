@@ -122,17 +122,25 @@ abstract class TestCase extends BaseTestCase
     }
 
     /**
-     * Override one gs() key for the current test. Equivalent to mutating
-     * the stub and re-putting it; tear-down restores the defaults via
-     * setUp on the next test.
+     * Override gs() key(s) for the current test. Two shapes:
+     *
+     *   gsOverride('key', value)
+     *   gsOverride(['key1' => v1, 'key2' => v2])
+     *
+     * Both mutate the cached GeneralSetting stub; setUp re-installs the
+     * defaults for the next test, so overrides don't leak.
      */
-    protected function gsOverride(string $key, mixed $value): void
+    protected function gsOverride(string|array $keyOrMap, mixed $value = null): void
     {
         $current = Cache::get('GeneralSetting');
         if (! is_object($current)) {
             $current = (object) [];
         }
-        $current->{$key} = $value;
+
+        $map = is_array($keyOrMap) ? $keyOrMap : [$keyOrMap => $value];
+        foreach ($map as $key => $v) {
+            $current->{$key} = $v;
+        }
         Cache::put('GeneralSetting', $current);
     }
 }
