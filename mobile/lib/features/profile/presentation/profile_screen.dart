@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../auth/application/auth_controller.dart';
+import '../../wallet/presentation/wallet_screen.dart';
 import 'change_password_screen.dart';
 import 'edit_profile_screen.dart';
 
@@ -59,6 +60,9 @@ class ProfileScreen extends ConsumerWidget {
           leading: const Icon(Icons.account_balance_wallet_outlined),
           title: const Text('Balance'),
           trailing: Text('\$${user.balance.toStringAsFixed(2)}'),
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(builder: (_) => const WalletScreen()),
+          ),
         ),
         const SizedBox(height: 16),
         Padding(

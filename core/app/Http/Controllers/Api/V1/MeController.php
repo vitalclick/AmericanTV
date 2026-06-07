@@ -6,8 +6,10 @@ use App\Constants\Status;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\UserResource;
 use App\Models\DeviceToken;
+use App\Models\Transaction;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\ResourceCollection;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
@@ -84,17 +86,83 @@ class MeController extends Controller
 
     public function wallet(Request $request): JsonResponse
     {
-        return $this->stub();
+        $user = $request->user();
+        return response()->json([
+            'balance'  => (float) $user->balance,
+            'currency' => (string) (gs('cur_text') ?? 'USD'),
+        ]);
     }
 
     public function transactions(Request $request): JsonResponse
     {
-        return $this->stub();
+        $request->validate([
+            'type' => ['sometimes', 'in:deposit,purchase,earning,withdraw'],
+            'page' => ['sometimes', 'integer', 'min:1'],
+        ]);
+
+        $query = Transaction::where('user_id', $request->user()->id)
+            ->orderByDesc('id');
+
+        // The Transaction.remark column carries a free-form string set by the
+        // gateway / earnings pipelines (see PaymentController::userDataUpdate).
+        // We group those into four buckets for the mobile filter.
+        if ($type = $request->query('type')) {
+            $query->whereIn('remark', match ($type) {
+                'deposit'  => ['deposit'],
+                'purchase' => ['purchased_video', 'purchased_playlist', 'purchased_plan', 'purchased_monetization'],
+                'earning'  => ['earn_from_video', 'earn_from_playlist', 'earn_from_plan', 'ads_revenue'],
+                'withdraw' => ['withdraw', 'withdraw_charge'],
+                default    => [],
+            });
+        }
+
+        $page = $query->paginate(20);
+
+        return response()->json([
+            'data' => $page->getCollection()->map(fn (Transaction $t) => [
+                'id'           => $t->id,
+                'trx'          => $t->trx,
+                'trx_type'     => $t->trx_type,
+                'amount'       => (float) $t->amount,
+                'charge'       => (float) $t->charge,
+                'post_balance' => (float) $t->post_balance,
+                'details'      => (string) $t->details,
+                'remark'       => (string) $t->remark,
+                'created_at'   => $t->created_at?->toIso8601String(),
+            ])->values(),
+            'meta' => [
+                'current_page' => $page->currentPage(),
+                'per_page'     => $page->perPage(),
+                'total'        => $page->total(),
+                'last_page'    => $page->lastPage(),
+            ],
+        ]);
     }
 
     public function earnings(Request $request): JsonResponse
     {
-        return $this->stub();
+        $userId = $request->user()->id;
+
+        $totals = Transaction::where('user_id', $userId)
+            ->selectRaw("
+                SUM(CASE WHEN remark IN ('earn_from_video','earn_from_playlist','earn_from_plan','ads_revenue') AND trx_type='+' THEN amount ELSE 0 END) as total,
+                SUM(CASE WHEN remark='earn_from_video' AND trx_type='+' THEN amount ELSE 0 END) as videos,
+                SUM(CASE WHEN remark='earn_from_playlist' AND trx_type='+' THEN amount ELSE 0 END) as playlists,
+                SUM(CASE WHEN remark='earn_from_plan' AND trx_type='+' THEN amount ELSE 0 END) as plans,
+                SUM(CASE WHEN remark='ads_revenue' AND trx_type='+' THEN amount ELSE 0 END) as ads
+            ")
+            ->first();
+
+        return response()->json([
+            'data' => [
+                'total'     => (float) ($totals->total ?? 0),
+                'videos'    => (float) ($totals->videos ?? 0),
+                'playlists' => (float) ($totals->playlists ?? 0),
+                'plans'     => (float) ($totals->plans ?? 0),
+                'ads'       => (float) ($totals->ads ?? 0),
+                'currency'  => (string) (gs('cur_text') ?? 'USD'),
+            ],
+        ]);
     }
 
     public function notifications(Request $request): JsonResponse
