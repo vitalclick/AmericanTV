@@ -62,7 +62,15 @@ class TestContainerBindingsAudit extends TestCase
         $files = $this->phpFilesUnder($testsDir);
 
         $methodAlternation = implode('|', self::BINDING_METHODS);
-        // Catches both arrow ($this->app->) and facade (App::) forms.
+        // Catches three shapes — all hit the same root container, all leak
+        // the same way unless registered:
+        //   $this->app->instance(X::class, ...)          (arrow)
+        //   app()->instance(X::class, ...)               (helper -> arrow)
+        //   App::instance(X::class, ...)                 (facade)
+        //   Container::getInstance()->instance(X::class) (raw container)
+        // The (?:->|::) alternation handles arrow and facade together;
+        // raw-container hits via the arrow alternative because the chain
+        // resolves to an instance method call.
         $pattern = '/(?:->|::)(' . $methodAlternation . ')\(\s*([A-Za-z0-9_\\\\]+)::class/m';
 
         $bound = [];
