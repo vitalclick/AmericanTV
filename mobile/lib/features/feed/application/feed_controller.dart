@@ -14,8 +14,22 @@ class FeedController extends StateNotifier<FeedState> {
 
   final FeedRepository _repo;
 
+  /// Render whatever the cache had immediately, then refresh from the
+  /// network. The cached render lets cold launches show content instantly
+  /// even on slow / no connectivity.
   Future<void> loadFirstPage() async {
-    state = state.copyWith(isLoading: true, clearError: true);
+    final cached = await _repo.cachedFirstPage();
+    if (cached != null && cached.videos.isNotEmpty) {
+      state = FeedState(
+        videos: cached.videos,
+        page: cached.page,
+        lastPage: cached.lastPage,
+        isLoading: true, // still loading fresh data in the background.
+      );
+    } else {
+      state = state.copyWith(isLoading: true, clearError: true);
+    }
+
     try {
       final page = await _repo.feed();
       state = FeedState(
@@ -24,6 +38,8 @@ class FeedController extends StateNotifier<FeedState> {
         lastPage: page.lastPage,
       );
     } on ApiException catch (e) {
+      // If we already rendered from cache, surface the error as a chip in
+      // the existing list rather than blanking the screen.
       state = state.copyWith(isLoading: false, errorMessage: e.message);
     }
   }

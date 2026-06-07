@@ -23,6 +23,9 @@ dependencies:
   # Secure key/value storage for the Sanctum token
   flutter_secure_storage: ^9.2.2
 
+  # Plain key/value cache for last-known feed / video detail
+  shared_preferences: ^2.3.2
+
   # Env loading
   flutter_dotenv: ^5.1.0
 

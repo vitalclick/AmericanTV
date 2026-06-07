@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/foundation.dart';
@@ -8,8 +10,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'app.dart';
 import 'core/env.dart';
 import 'core/firebase_options.dart';
+import 'core/services/cache_service.dart';
 import 'core/services/purchases_service.dart';
 import 'core/services/push_service.dart';
+import 'features/auth/application/auth_controller.dart';
+import 'features/auth/domain/auth_state.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -27,6 +32,18 @@ Future<void> main() async {
   // their FCM token registered without us needing to remember to watch it
   // from a widget.
   container.read(pushServiceProvider);
+
+  // Drop cached feed/video state on sign-out so the next user signing in on
+  // the same device doesn't see the previous user's content.
+  container.listen<AuthState>(
+    authControllerProvider,
+    (prev, next) {
+      if (prev?.status == AuthStatus.authenticated &&
+          next.status == AuthStatus.unauthenticated) {
+        unawaited(container.read(cacheServiceProvider).clearAll());
+      }
+    },
+  );
 
   runApp(
     UncontrolledProviderScope(container: container, child: const App()),

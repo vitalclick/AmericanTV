@@ -110,6 +110,11 @@ class AuthController extends StateNotifier<AuthState> {
     state = const AuthState.unauthenticated();
   }
 
+  /// Hook for sessions that need to wipe device-local caches alongside the
+  /// token (currently only logout — but if we ever add "switch account",
+  /// this is where it goes).
+  Future<void> _onSignOutBookkeeping() async {}
+
   void clearError() {
     if (state.errorMessage != null) {
       state = state.copyWith(clearError: true);
