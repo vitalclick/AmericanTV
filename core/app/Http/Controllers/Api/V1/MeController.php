@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Constants\Status;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\UserResource;
+use App\Models\DeviceToken;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -61,12 +63,32 @@ class MeController extends Controller
 
     public function registerDeviceToken(Request $request): JsonResponse
     {
-        return $this->stub();
+        $data = $request->validate([
+            'token'    => ['required', 'string', 'max:255'],
+            'platform' => ['required', 'string', 'in:ios,android'],
+        ]);
+
+        // Re-bind an existing row to the current user — multiple users on the
+        // same device should still get push for the active account.
+        $deviceToken = DeviceToken::firstOrNew(['token' => $data['token']]);
+        $deviceToken->user_id = $request->user()->id;
+        $deviceToken->is_app  = Status::YES;
+        $deviceToken->save();
+
+        return response()->json([], 204);
     }
 
     public function unregisterDeviceToken(Request $request): JsonResponse
     {
-        return $this->stub();
+        $request->validate([
+            'token' => ['required', 'string', 'max:255'],
+        ]);
+
+        DeviceToken::where('token', $request->input('token'))
+            ->where('user_id', $request->user()->id)
+            ->delete();
+
+        return response()->json([], 204);
     }
 
     private function stub(): JsonResponse
