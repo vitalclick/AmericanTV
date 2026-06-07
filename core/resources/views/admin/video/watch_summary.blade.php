@@ -1,4 +1,13 @@
 @extends('admin.layouts.app')
+
+@push('breadcrumb-plugins')
+    <a href="{{ route('admin.videos.edit', $video->id) }}"
+       class="btn btn-sm btn-outline--primary me-2">
+        <i class="la la-pencil"></i> @lang('Edit video')
+    </a>
+    <x-back route="{{ route('admin.videos.index') }}" />
+@endpush
+
 @section('panel')
 <div class="row">
     <div class="col-lg-12">
