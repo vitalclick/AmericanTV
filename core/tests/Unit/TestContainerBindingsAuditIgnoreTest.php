@@ -67,6 +67,31 @@ PHP;
         $this->assertFalse($this->checkExempt($source));
     }
 
+    public function test_bare_marker_without_a_reason_does_not_exempt(): void
+    {
+        // `@audit-ignore` with no colon-prefixed reason is treated as
+        // commentary, not an exemption. Forcing a justification means
+        // the marker shows up clearly in code review.
+        $source = <<<'PHP'
+<?php
+// @audit-ignore
+$this->app->instance(SomeRetiredClient::class, $mock);
+PHP;
+        $this->assertFalse($this->checkExempt($source));
+    }
+
+    public function test_marker_with_empty_reason_does_not_exempt(): void
+    {
+        // The trailing colon-whitespace-only form fails the
+        // "non-empty reason" requirement.
+        $source = <<<'PHP'
+<?php
+// @audit-ignore:
+$this->app->instance(SomeRetiredClient::class, $mock);
+PHP;
+        $this->assertFalse($this->checkExempt($source));
+    }
+
     /**
      * Reflect into hasAuditIgnoreAbove() with the offset of the binding's
      * FQCN match. The helper is private but reflection bypasses the

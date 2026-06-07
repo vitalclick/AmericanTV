@@ -144,8 +144,13 @@ class TestContainerBindingsAudit extends TestCase
 
     /**
      * Look at the lines immediately before $offset; if any of the (up to 3)
-     * preceding non-blank lines is a comment containing `@audit-ignore`,
-     * the binding is exempted.
+     * preceding non-blank lines is a comment containing `@audit-ignore:`
+     * followed by a non-empty reason, the binding is exempted.
+     *
+     * The non-empty reason requirement is the bit that distinguishes a
+     * deliberate exemption ("we're testing the deprecation path") from
+     * a casual one ("don't audit this"). Bare `@audit-ignore` without
+     * justification doesn't count.
      */
     private function hasAuditIgnoreAbove(string $source, int $offset): bool
     {
@@ -157,14 +162,14 @@ class TestContainerBindingsAudit extends TestCase
             $line = trim($lines[$i]);
             if ($line === '') continue;
             $checked++;
-            if (str_contains($line, '@audit-ignore') &&
-                (str_starts_with($line, '//') || str_starts_with($line, '*') || str_starts_with($line, '#'))) {
+            $isComment = str_starts_with($line, '//') ||
+                str_starts_with($line, '*') ||
+                str_starts_with($line, '#');
+            if ($isComment && preg_match('/@audit-ignore:\s*\S/', $line) === 1) {
                 return true;
             }
             // First non-blank, non-comment line we hit — stop walking.
-            if (! str_starts_with($line, '//') &&
-                ! str_starts_with($line, '*') &&
-                ! str_starts_with($line, '#')) {
+            if (! $isComment) {
                 return false;
             }
         }
