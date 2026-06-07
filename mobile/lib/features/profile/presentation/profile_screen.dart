@@ -5,6 +5,7 @@ import '../../auth/application/auth_controller.dart';
 import '../../wallet/presentation/wallet_screen.dart';
 import 'change_password_screen.dart';
 import 'edit_profile_screen.dart';
+import 'verify_code_screen.dart';
 
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
@@ -33,9 +34,18 @@ class ProfileScreen extends ConsumerWidget {
           child: Text(user.email, style: Theme.of(context).textTheme.bodyMedium),
         ),
         if (!user.emailVerified)
-          const Padding(
-            padding: EdgeInsets.only(top: 8),
-            child: Center(child: _Pill(label: 'Email not verified')),
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Center(
+              child: GestureDetector(
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const VerifyCodeScreen(kind: VerifyKind.email),
+                  ),
+                ),
+                child: const _Pill(label: 'Email not verified — tap to verify'),
+              ),
+            ),
           ),
         const SizedBox(height: 24),
         const _SectionLabel('Account'),
@@ -55,6 +65,28 @@ class ProfileScreen extends ConsumerWidget {
             MaterialPageRoute<void>(builder: (_) => const ChangePasswordScreen()),
           ),
         ),
+        if (!user.emailVerified)
+          ListTile(
+            leading: const Icon(Icons.mark_email_unread_outlined),
+            title: const Text('Verify email'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const VerifyCodeScreen(kind: VerifyKind.email),
+              ),
+            ),
+          ),
+        if (!user.mobileVerified)
+          ListTile(
+            leading: const Icon(Icons.sms_outlined),
+            title: const Text('Verify mobile'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const VerifyCodeScreen(kind: VerifyKind.mobile),
+              ),
+            ),
+          ),
         const _SectionLabel('Wallet'),
         ListTile(
           leading: const Icon(Icons.account_balance_wallet_outlined),

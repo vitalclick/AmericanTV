@@ -277,12 +277,12 @@ class AuthController extends Controller
 
     public function verifyEmail(Request $request): JsonResponse
     {
-        return $this->stubVerification($request, field: 'ev', label: 'email');
+        return $this->verifyCodeAgainstUser($request, field: 'ev', label: 'email');
     }
 
     public function verifyMobile(Request $request): JsonResponse
     {
-        return $this->stubVerification($request, field: 'sv', label: 'mobile');
+        return $this->verifyCodeAgainstUser($request, field: 'sv', label: 'mobile');
     }
 
     public function verify2fa(Request $request): JsonResponse
@@ -292,19 +292,69 @@ class AuthController extends Controller
         ], 501);
     }
 
-    private function stubVerification(Request $request, string $field, string $label): JsonResponse
+    public function sendEmailCode(Request $request): JsonResponse
+    {
+        return $this->sendVerificationCode($request, type: 'email');
+    }
+
+    public function sendMobileCode(Request $request): JsonResponse
+    {
+        return $this->sendVerificationCode($request, type: 'sms');
+    }
+
+    /**
+     * Mirrors User\AuthorizationController::sendVerifyCode — 2-minute rate
+     * limit between sends, 6-digit code stamped onto users.ver_code, and
+     * the same EVER_CODE / SVER_CODE notify templates the web flow uses so
+     * admins don't need to maintain a parallel template set.
+     */
+    private function sendVerificationCode(Request $request, string $type): JsonResponse
+    {
+        $user = $request->user();
+
+        if ($type === 'email' && (int) $user->ev === Status::VERIFIED) {
+            return response()->json(['message' => 'Email is already verified.'], 422);
+        }
+        if ($type === 'sms' && (int) $user->sv === Status::VERIFIED) {
+            return response()->json(['message' => 'Mobile is already verified.'], 422);
+        }
+        if ($type === 'sms' && empty($user->mobile)) {
+            return response()->json(['message' => 'Add a mobile number before requesting a code.'], 422);
+        }
+
+        if ($user->ver_code_send_at && $user->ver_code_send_at->addMinutes(2)->isFuture()) {
+            $retryIn = $user->ver_code_send_at->addMinutes(2)->diffInSeconds(Carbon::now());
+            return response()->json([
+                'message'        => "Please wait {$retryIn} seconds before requesting another code.",
+                'retry_after_s'  => $retryIn,
+            ], 429);
+        }
+
+        $user->ver_code         = verificationCode(6);
+        $user->ver_code_send_at = Carbon::now();
+        $user->save();
+
+        notify($user, $type === 'email' ? 'EVER_CODE' : 'SVER_CODE', [
+            'code' => $user->ver_code,
+        ], [$type]);
+
+        return response()->json([], 204);
+    }
+
+    private function verifyCodeAgainstUser(Request $request, string $field, string $label): JsonResponse
     {
         $request->validate(['code' => ['required', 'string']]);
 
         $user = $request->user();
-        if (! hash_equals((string) $user->ver_code, (string) $request->input('code'))) {
+        if (! $user->ver_code || ! hash_equals((string) $user->ver_code, (string) $request->input('code'))) {
             throw ValidationException::withMessages([
                 'code' => ["Invalid {$label} verification code."],
             ]);
         }
 
-        $user->{$field}     = Status::VERIFIED;
-        $user->ver_code     = null;
+        $user->{$field}         = Status::VERIFIED;
+        $user->ver_code         = null;
+        $user->ver_code_send_at = null;
         $user->save();
 
         return response()->json([], 204);

@@ -39,7 +39,9 @@ Route::group([], function () {
     Route::middleware('auth:sanctum')->group(function () {
         Route::post('auth/logout', 'AuthController@logout');
         Route::post('auth/refresh', 'AuthController@refresh');
+        Route::post('auth/email/send', 'AuthController@sendEmailCode');
         Route::post('auth/email/verify', 'AuthController@verifyEmail');
+        Route::post('auth/mobile/send', 'AuthController@sendMobileCode');
         Route::post('auth/mobile/verify', 'AuthController@verifyMobile');
         Route::post('auth/2fa/verify', 'AuthController@verify2fa');
 
