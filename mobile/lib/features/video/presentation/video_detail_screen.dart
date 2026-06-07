@@ -161,7 +161,11 @@ class _DetailBody extends ConsumerWidget {
       );
       await navigator.push(
         MaterialPageRoute<void>(
-          builder: (_) => VideoPlayerScreen(source: source, title: detail.summary.title),
+          builder: (_) => VideoPlayerScreen(
+            source: source,
+            title: detail.summary.title,
+            videoId: detail.summary.id,
+          ),
         ),
       );
       ref.read(analyticsServiceProvider).track(
