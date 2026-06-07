@@ -19,10 +19,42 @@ class _CommentsNotifier extends AutoDisposeFamilyAsyncNotifier<List<Comment>, in
   }
 
   Future<void> post(String body) async {
-    final videoId = arg;
-    final created = await ref.read(commentRepositoryProvider).post(videoId, body);
+    final created = await ref.read(commentRepositoryProvider).post(arg, body);
+    state = AsyncData([created, ...(state.valueOrNull ?? const [])]);
+  }
+
+  Future<void> reply(int parentId, String body) async {
+    final created = await ref.read(commentRepositoryProvider).reply(parentId, body);
     final current = state.valueOrNull ?? const <Comment>[];
-    state = AsyncData([created, ...current]);
+    state = AsyncData([
+      for (final c in current)
+        c.id == parentId
+            ? c.copyWith(
+                replyCount: c.replyCount + 1,
+                replies: [...c.replies, created],
+              )
+            : c,
+    ]);
+  }
+
+  Future<void> react(int commentId, int isLike) async {
+    final res = await ref
+        .read(commentRepositoryProvider)
+        .reactToComment(commentId: commentId, isLike: isLike);
+    state = AsyncData(_apply(state.valueOrNull ?? const [], commentId, res));
+  }
+
+  // Recurses into replies so a reaction on a reply also updates state.
+  List<Comment> _apply(List<Comment> list, int id, CommentReactionState res) {
+    return [
+      for (final c in list)
+        if (c.id == id)
+          c.copyWith(likes: res.likes, userReaction: res.userReaction)
+        else if (c.replies.isNotEmpty)
+          c.copyWith(replies: _apply(c.replies, id, res))
+        else
+          c,
+    ];
   }
 }
 
@@ -32,7 +64,7 @@ class CommentsSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final commentsAsync = ref.watch(_commentsProvider(videoId));
+    final async = ref.watch(_commentsProvider(videoId));
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -43,16 +75,19 @@ class CommentsSection extends ConsumerWidget {
             children: [
               Text('Comments', style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(width: 6),
-              if (commentsAsync.hasValue)
-                Text('(${commentsAsync.value!.length})',
+              if (async.hasValue)
+                Text('(${async.value!.length})',
                     style: Theme.of(context).textTheme.bodySmall),
             ],
           ),
         ),
         const SizedBox(height: 8),
-        _CommentComposer(videoId: videoId),
+        _Composer(
+          onSubmit: (body) =>
+              ref.read(_commentsProvider(videoId).notifier).post(body),
+        ),
         const Divider(height: 24),
-        commentsAsync.when(
+        async.when(
           loading: () => const Padding(
             padding: EdgeInsets.symmetric(vertical: 24),
             child: Center(child: CircularProgressIndicator()),
@@ -71,9 +106,11 @@ class CommentsSection extends ConsumerWidget {
                 child: Center(child: Text('Be the first to comment.')),
               );
             }
+            final notifier = ref.read(_commentsProvider(videoId).notifier);
             return Column(
               children: [
-                for (final c in comments) _CommentTile(comment: c),
+                for (final c in comments)
+                  _CommentTile(comment: c, notifier: notifier),
               ],
             );
           },
@@ -83,15 +120,17 @@ class CommentsSection extends ConsumerWidget {
   }
 }
 
-class _CommentComposer extends ConsumerStatefulWidget {
-  const _CommentComposer({required this.videoId});
-  final int videoId;
+class _Composer extends StatefulWidget {
+  const _Composer({required this.onSubmit, this.hint = 'Add a comment…', this.autofocus = false});
+  final Future<void> Function(String body) onSubmit;
+  final String hint;
+  final bool autofocus;
 
   @override
-  ConsumerState<_CommentComposer> createState() => _CommentComposerState();
+  State<_Composer> createState() => _ComposerState();
 }
 
-class _CommentComposerState extends ConsumerState<_CommentComposer> {
+class _ComposerState extends State<_Composer> {
   final _controller = TextEditingController();
   bool _busy = false;
 
@@ -107,9 +146,7 @@ class _CommentComposerState extends ConsumerState<_CommentComposer> {
 
     setState(() => _busy = true);
     try {
-      await ref
-          .read(_commentsProvider(widget.videoId).notifier)
-          .post(body);
+      await widget.onSubmit(body);
       _controller.clear();
     } on ApiException catch (e) {
       if (mounted) {
@@ -130,13 +167,12 @@ class _CommentComposerState extends ConsumerState<_CommentComposer> {
           Expanded(
             child: TextField(
               controller: _controller,
+              autofocus: widget.autofocus,
               minLines: 1,
               maxLines: 4,
               textInputAction: TextInputAction.send,
               onSubmitted: (_) => _submit(),
-              decoration: const InputDecoration(
-                hintText: 'Add a comment…',
-              ),
+              decoration: InputDecoration(hintText: widget.hint),
             ),
           ),
           const SizedBox(width: 8),
@@ -155,17 +191,32 @@ class _CommentComposerState extends ConsumerState<_CommentComposer> {
   }
 }
 
-class _CommentTile extends StatelessWidget {
-  const _CommentTile({required this.comment});
+class _CommentTile extends StatefulWidget {
+  const _CommentTile({
+    required this.comment,
+    required this.notifier,
+    this.indent = 0,
+  });
+
   final Comment comment;
+  final _CommentsNotifier notifier;
+  final double indent;
+
+  @override
+  State<_CommentTile> createState() => _CommentTileState();
+}
+
+class _CommentTileState extends State<_CommentTile> {
+  bool _showReplyBox = false;
+  bool _expandReplies = false;
 
   @override
   Widget build(BuildContext context) {
-    final author = comment.author?.name ?? 'Anonymous';
-    final ago = _relativeTime(comment.createdAt);
+    final c = widget.comment;
+    final author = c.author?.name ?? 'Anonymous';
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: EdgeInsets.only(left: 16 + widget.indent, right: 16, top: 8, bottom: 4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -173,14 +224,79 @@ class _CommentTile extends StatelessWidget {
             children: [
               Text(author, style: Theme.of(context).textTheme.bodyMedium),
               const SizedBox(width: 6),
-              Text(ago,
+              Text(_relativeTime(c.createdAt),
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: Theme.of(context).disabledColor,
                       )),
             ],
           ),
           const SizedBox(height: 4),
-          Text(comment.body),
+          Text(c.body),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                icon: Icon(
+                  c.userReaction == 1 ? Icons.thumb_up : Icons.thumb_up_outlined,
+                  size: 16,
+                  color: c.userReaction == 1
+                      ? Theme.of(context).colorScheme.primary
+                      : null,
+                ),
+                onPressed: () => widget.notifier.react(c.id, 1),
+              ),
+              Text('${c.likes}', style: Theme.of(context).textTheme.bodySmall),
+              const SizedBox(width: 8),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                icon: Icon(
+                  c.userReaction == -1 ? Icons.thumb_down : Icons.thumb_down_outlined,
+                  size: 16,
+                  color: c.userReaction == -1
+                      ? Theme.of(context).colorScheme.primary
+                      : null,
+                ),
+                onPressed: () => widget.notifier.react(c.id, 0),
+              ),
+              const SizedBox(width: 8),
+              if (widget.indent == 0)
+                TextButton(
+                  onPressed: () => setState(() => _showReplyBox = !_showReplyBox),
+                  child: Text(_showReplyBox ? 'Cancel' : 'Reply'),
+                ),
+            ],
+          ),
+          if (_showReplyBox)
+            _Composer(
+              hint: 'Reply to $author…',
+              autofocus: true,
+              onSubmit: (body) async {
+                // Reply target is always the root comment so replies stay
+                // one level deep, matching how the existing web flow nests.
+                final rootId = widget.indent == 0 ? c.id : (c.parentId ?? c.id);
+                await widget.notifier.reply(rootId, body);
+                setState(() {
+                  _showReplyBox = false;
+                  _expandReplies = true;
+                });
+              },
+            ),
+          if (c.replies.isNotEmpty) ...[
+            TextButton(
+              onPressed: () => setState(() => _expandReplies = !_expandReplies),
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                visualDensity: VisualDensity.compact,
+              ),
+              child: Text(_expandReplies
+                  ? 'Hide ${c.replies.length} replies'
+                  : 'View ${c.replies.length} replies'),
+            ),
+            if (_expandReplies)
+              for (final r in c.replies)
+                _CommentTile(comment: r, notifier: widget.notifier, indent: 24),
+          ],
         ],
       ),
     );

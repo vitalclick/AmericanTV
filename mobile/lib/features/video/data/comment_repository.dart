@@ -47,6 +47,46 @@ class CommentRepository {
       throw ApiException.fromDio(e);
     }
   }
+
+  Future<Comment> reply(int parentId, String body) async {
+    try {
+      final response = await _dio.post<Map<String, dynamic>>(
+        '/comments/$parentId/reply',
+        data: {'body': body},
+      );
+      return Comment.fromJson(
+        (response.data!['data'] as Map<String, dynamic>),
+      );
+    } on DioException catch (e) {
+      throw ApiException.fromDio(e);
+    }
+  }
+
+  Future<CommentReactionState> reactToComment({required int commentId, required int isLike}) async {
+    try {
+      final response = await _dio.post<Map<String, dynamic>>(
+        '/comments/$commentId/reaction',
+        data: {'is_like': isLike},
+      );
+      return CommentReactionState.fromJson(response.data!['data'] as Map<String, dynamic>);
+    } on DioException catch (e) {
+      throw ApiException.fromDio(e);
+    }
+  }
+}
+
+class CommentReactionState {
+  const CommentReactionState({required this.userReaction, required this.likes});
+
+  factory CommentReactionState.fromJson(Map<String, dynamic> json) {
+    return CommentReactionState(
+      userReaction: (json['user_reaction'] as num?)?.toInt() ?? 0,
+      likes: (json['likes'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  final int userReaction;
+  final int likes;
 }
 
 class PaginatedComments {

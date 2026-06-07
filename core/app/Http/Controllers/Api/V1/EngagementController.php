@@ -34,7 +34,7 @@ class EngagementController extends Controller
             ->whereHas('user', fn (Builder $q) => $q->active())
             ->findOrFail($videoId);
 
-        $comments = Comment::with('user')
+        $comments = Comment::with(['user', 'userReactions', 'replies.user', 'replies.userReactions'])
             ->where('video_id', $video->id)
             ->whereNull('parent_id')
             ->orderByDesc('id')
@@ -70,7 +70,7 @@ class EngagementController extends Controller
             $notification->save();
         }
 
-        $comment->load('user');
+        $comment->load(['user', 'userReactions']);
 
         return response()->json([
             'data' => (new CommentResource($comment))->toArray($request),
@@ -101,7 +101,7 @@ class EngagementController extends Controller
             $notification->save();
         }
 
-        $reply->load('user');
+        $reply->load(['user', 'userReactions']);
 
         return response()->json([
             'data' => (new CommentResource($reply))->toArray($request),

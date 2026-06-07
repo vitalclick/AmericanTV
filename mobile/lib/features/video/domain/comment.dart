@@ -9,6 +9,9 @@ class Comment {
     this.parentId,
     this.author,
     this.replyCount = 0,
+    this.likes = 0,
+    this.userReaction = 0,
+    this.replies = const [],
   });
 
   factory Comment.fromJson(Map<String, dynamic> json) {
@@ -23,6 +26,11 @@ class Comment {
           ? Channel.fromJson(json['author'] as Map<String, dynamic>)
           : null,
       replyCount: (json['reply_count'] as num?)?.toInt() ?? 0,
+      likes: (json['likes'] as num?)?.toInt() ?? 0,
+      userReaction: (json['user_reaction'] as num?)?.toInt() ?? 0,
+      replies: ((json['replies'] as List?) ?? const [])
+          .map((e) => Comment.fromJson(e as Map<String, dynamic>))
+          .toList(),
     );
   }
 
@@ -32,4 +40,26 @@ class Comment {
   final DateTime createdAt;
   final Channel? author;
   final int replyCount;
+  final int likes;
+  final int userReaction;
+  final List<Comment> replies;
+
+  Comment copyWith({
+    int? likes,
+    int? userReaction,
+    List<Comment>? replies,
+    int? replyCount,
+  }) {
+    return Comment(
+      id: id,
+      body: body,
+      parentId: parentId,
+      createdAt: createdAt,
+      author: author,
+      replyCount: replyCount ?? this.replyCount,
+      likes: likes ?? this.likes,
+      userReaction: userReaction ?? this.userReaction,
+      replies: replies ?? this.replies,
+    );
+  }
 }
