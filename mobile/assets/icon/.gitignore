@@ -1,0 +1,4 @@
+# Binary PNG sources are excluded — keep them in the design / brand
+# repo and copy in as part of the build. The README documents the
+# expected files + dimensions.
+*.png

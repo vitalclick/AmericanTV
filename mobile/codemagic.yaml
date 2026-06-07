@@ -137,6 +137,29 @@ definitions:
           /usr/bin/env perl -i -pe 'BEGIN{undef $/;} s|signingConfig signingConfigs.debug|signingConfig signingConfigs.release\n            minifyEnabled true\n            shrinkResources true\n            proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"|;' $BG
         fi
 
+    - name: Drop launcher icon sources
+      # The PNG sources are kept in the Codemagic env group as base64
+      # blobs so the binary doesn't bloat the git history. Decode into
+      # place; flutter_launcher_icons reads them on the next step.
+      script: |
+        cd $CM_BUILD_DIR/mobile
+        mkdir -p assets/icon
+        if [ -n "$APP_ICON_PNG_B64" ]; then
+          echo "$APP_ICON_PNG_B64" | base64 -d > assets/icon/app-icon.png
+        fi
+        if [ -n "$APP_ICON_ADAPTIVE_FG_PNG_B64" ]; then
+          echo "$APP_ICON_ADAPTIVE_FG_PNG_B64" | base64 -d > assets/icon/app-icon-adaptive-foreground.png
+        fi
+
+    - name: Generate launcher icons
+      script: |
+        cd $CM_BUILD_DIR/mobile
+        if [ -f assets/icon/app-icon.png ]; then
+          dart run flutter_launcher_icons
+        else
+          echo "No app-icon.png — skipping icon generation. The build will use Flutter's default."
+        fi
+
     - name: Rewrite platform identifiers
       # flutter create with --org com.americantv would produce
       # com.americantv.americantv on both platforms. We need:
