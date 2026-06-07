@@ -119,6 +119,13 @@ class _DetailBody extends ConsumerWidget {
               ),
               const SizedBox(height: 16),
               _ReactionBar(detail: detail),
+              if (detail.summary.channel?.id != null) ...[
+                const SizedBox(height: 12),
+                _SubscribeButton(
+                  channelId: detail.summary.channel!.id,
+                  initialSubscribed: detail.isSubscribed,
+                ),
+              ],
               const Divider(height: 32),
               if (detail.description.isNotEmpty) ...[
                 Text(detail.description),
@@ -298,7 +305,8 @@ class _Stat extends StatelessWidget {
 
 /// Like / dislike / comment counter row that mutates state locally on tap.
 /// Mirrors the toggle/swap/remove semantics on the backend: tapping the
-/// same direction twice clears the reaction.
+/// same direction twice clears the reaction. Optimistic — UI flips first,
+/// server confirms after; we roll back to the previous state on error.
 class _ReactionBar extends ConsumerStatefulWidget {
   const _ReactionBar({required this.detail});
   final VideoDetail detail;
@@ -316,22 +324,57 @@ class _ReactionBarState extends ConsumerState<_ReactionBar> {
   Future<void> _react(int direction) async {
     if (_busy) return;
     final isLike = direction == 1 ? 1 : 0;
-    setState(() => _busy = true);
+
+    // Mutate locally first using the toggle/swap/remove semantics we share
+    // with the server, so the tap is instant.
+    final previousReaction = _userReaction;
+    final previousLikes = _likes;
+    final previousDislikes = _dislikes;
+
+    setState(() {
+      _busy = true;
+      _applyLocalToggle(direction);
+    });
+
     try {
       final state = await ref
           .read(reactionsRepositoryProvider)
           .reactToVideo(videoId: widget.detail.summary.id, isLike: isLike);
+      // Authoritative server counts replace our optimistic guess.
       setState(() {
         _userReaction = state.userReaction;
         _likes = state.likes;
         _dislikes = state.dislikes;
       });
     } on ApiException catch (e) {
+      // Roll back to the pre-tap state.
+      setState(() {
+        _userReaction = previousReaction;
+        _likes = previousLikes;
+        _dislikes = previousDislikes;
+      });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
       }
     } finally {
       if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  void _applyLocalToggle(int direction) {
+    if (_userReaction == direction) {
+      // Same direction twice -> clear.
+      _userReaction = 0;
+      if (direction == 1) _likes -= 1; else _dislikes -= 1;
+    } else if (_userReaction == -direction) {
+      // Other direction -> swap.
+      _userReaction = direction;
+      if (direction == 1) { _likes += 1; _dislikes -= 1; }
+      else                { _dislikes += 1; _likes -= 1; }
+    } else {
+      // None -> add.
+      _userReaction = direction;
+      if (direction == 1) _likes += 1; else _dislikes += 1;
     }
   }
 
@@ -397,3 +440,52 @@ class _PaywallBadge extends StatelessWidget {
   }
 }
 
+class _SubscribeButton extends ConsumerStatefulWidget {
+  const _SubscribeButton({required this.channelId, this.initialSubscribed = false});
+  final int channelId;
+  final bool initialSubscribed;
+
+  @override
+  ConsumerState<_SubscribeButton> createState() => _SubscribeButtonState();
+}
+
+class _SubscribeButtonState extends ConsumerState<_SubscribeButton> {
+  late bool _subscribed = widget.initialSubscribed;
+  bool _busy = false;
+
+  Future<void> _toggle() async {
+    if (_busy) return;
+    final previous = _subscribed;
+    setState(() {
+      _busy = true;
+      _subscribed = !previous;
+    });
+
+    try {
+      final actual = await ref
+          .read(reactionsRepositoryProvider)
+          .subscribeChannel(widget.channelId);
+      // Authoritative server value replaces our optimistic guess.
+      setState(() => _subscribed = actual);
+    } on ApiException catch (e) {
+      setState(() => _subscribed = previous);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: FilledButton.tonalIcon(
+        onPressed: _busy ? null : _toggle,
+        icon: Icon(_subscribed ? Icons.notifications_active : Icons.notifications_none),
+        label: Text(_subscribed ? 'Subscribed' : 'Subscribe'),
+      ),
+    );
+  }
+}

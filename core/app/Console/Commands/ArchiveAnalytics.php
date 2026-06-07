@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use Aws\S3\S3Client;
 use Illuminate\Console\Command;
+use Illuminate\Container\Container;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -29,6 +30,7 @@ class ArchiveAnalytics extends Command
         {--since= : Convenience: days-ago start, with end = now}
         {--upload-to= : s3://bucket/prefix/ — uploads the CSV with aws-sdk-php}
         {--then-prune : Delete rows from app_events after a successful upload}
+        {--gzip : Write a .csv.gz instead of raw CSV (~5-10x smaller)}
         {--batch=5000 : Rows per stream batch}';
 
     protected $description = 'Stream historical app_events into CSV (+ optional S3 upload).';
@@ -80,10 +82,20 @@ class ArchiveAnalytics extends Command
     private function writeCsv(Carbon $from, Carbon $to, int $batch): string
     {
         $stamp = $from->format('Ymd') . '-' . $to->format('Ymd');
-        $localPath = storage_path("app/analytics-archive-{$stamp}.csv");
+        $gzip = (bool) $this->option('gzip');
+        $extension = $gzip ? '.csv.gz' : '.csv';
+        $localPath = storage_path("app/analytics-archive-{$stamp}{$extension}");
 
-        $fh = fopen($localPath, 'w');
-        fputcsv($fh, ['id', 'user_id', 'name', 'platform', 'session_id', 'video_id', 'payload', 'occurred_at']);
+        // gzopen + gzwrite mirror the fopen/fputcsv contract but with on-the-
+        // fly compression. We hand-format CSV rows so we can flow through
+        // either handle uniformly — fputcsv only accepts a real file handle.
+        $fh = $gzip ? gzopen($localPath, 'wb6') : fopen($localPath, 'w');
+        $write = function (array $row) use ($fh, $gzip) {
+            $line = implode(',', array_map($this->csvEscape(...), $row)) . "\n";
+            $gzip ? gzwrite($fh, $line) : fwrite($fh, $line);
+        };
+
+        $write(['id', 'user_id', 'name', 'platform', 'session_id', 'video_id', 'payload', 'occurred_at']);
 
         $bar = $this->output->createProgressBar();
         $bar->start();
@@ -98,7 +110,7 @@ class ArchiveAnalytics extends Command
                 ->get();
 
             foreach ($rows as $row) {
-                fputcsv($fh, [
+                $write([
                     $row->id,
                     $row->user_id,
                     $row->name,
@@ -115,8 +127,22 @@ class ArchiveAnalytics extends Command
 
         $bar->finish();
         $this->newLine();
-        fclose($fh);
+        $gzip ? gzclose($fh) : fclose($fh);
         return $localPath;
+    }
+
+    /**
+     * Minimal RFC-4180 CSV escaping: quote when the field contains a
+     * delimiter, double-quote, CR, or LF; double internal quotes.
+     */
+    private function csvEscape(mixed $value): string
+    {
+        $s = (string) ($value ?? '');
+        if ($s === '') return '';
+        if (preg_match('/[",\r\n]/', $s)) {
+            return '"' . str_replace('"', '""', $s) . '"';
+        }
+        return $s;
     }
 
     private function uploadToS3(string $localPath, string $target): void
@@ -129,15 +155,20 @@ class ArchiveAnalytics extends Command
         [$_, $bucket, $prefix] = $m;
         $key = trim($prefix, '/') . '/' . basename($localPath);
 
-        $client = new S3Client([
-            'version'     => 'latest',
-            'region'      => env('AWS_DEFAULT_REGION', 'us-east-1'),
-            'credentials' => [
-                'key'    => env('AWS_ACCESS_KEY_ID'),
-                'secret' => env('AWS_SECRET_ACCESS_KEY'),
-            ],
-            'endpoint'    => env('AWS_ENDPOINT_URL'), // null for AWS S3, set for Wasabi / DO Spaces.
-        ]);
+        // Resolve via the container so tests can bind a mock S3Client
+        // without us having to dependency-inject through the artisan
+        // signature.
+        $client = Container::getInstance()->has(S3Client::class)
+            ? Container::getInstance()->make(S3Client::class)
+            : new S3Client([
+                'version'     => 'latest',
+                'region'      => env('AWS_DEFAULT_REGION', 'us-east-1'),
+                'credentials' => [
+                    'key'    => env('AWS_ACCESS_KEY_ID'),
+                    'secret' => env('AWS_SECRET_ACCESS_KEY'),
+                ],
+                'endpoint'    => env('AWS_ENDPOINT_URL'), // null for AWS S3, set for Wasabi / DO Spaces.
+            ]);
 
         try {
             $client->putObject([

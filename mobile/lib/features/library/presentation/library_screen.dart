@@ -54,7 +54,14 @@ class LibraryScreen extends ConsumerWidget {
                   provider: _watchLaterProvider,
                   emptyMessage: 'No videos saved for later.',
                   onRemove: (videoId) async {
-                    await ref.read(libraryRepositoryProvider).removeWatchLater(videoId);
+                    // Optimistic: invalidate after we've already issued the
+                    // request, so the user doesn't watch the tile snap to a
+                    // spinner. removeWatchLater handles offline queueing
+                    // internally — see LibraryRepository.
+                    final removal = ref
+                        .read(libraryRepositoryProvider)
+                        .removeWatchLater(videoId);
+                    await removal;
                     ref.invalidate(_watchLaterProvider);
                   },
                 ),

@@ -1,0 +1,580 @@
+# Codemagic CI/CD configuration for AmericanTV.
+#
+# Workflows:
+#   ios-testflight   - iOS release build, signed, uploaded to TestFlight.
+#   ios-app-store    - same, but submits to App Store Review.
+#   android-internal - Android AAB, signed, uploaded to Play Internal Testing.
+#   android-production - same, but promoted to Production track.
+#
+# Required Codemagic integrations (configure in the Teams settings UI
+# before first build):
+#   - "App Store Connect" with an API key for team PDNU7JKBQZ.
+#   - "Google Play" with a service account JSON granted Release Manager
+#     access on com.americantv.app.
+#   - "Firebase" if you want crashlytics symbol upload on iOS.
+#
+# Required environment variable groups (also in Teams settings):
+#   - "americantv-prod" with the keys documented in mobile/docs/CODEMAGIC_SETUP.md.
+
+definitions:
+  setup_flutter: &setup_flutter
+    flutter: stable
+    xcode: latest
+    cocoapods: default
+
+  base_scripts: &base_scripts
+    - name: Show Flutter + Dart versions
+      script: |
+        flutter --version
+        dart --version
+
+    - name: Materialize platform projects
+      # The android/ and ios/ directories aren't in version control; flutter
+      # create generates them deterministically, then we layer the native
+      # shim files on top. See mobile/docs/platform-setup.md.
+      script: |
+        cd $CM_BUILD_DIR/mobile
+        flutter create . \
+          --org com.americantv \
+          --project-name americantv \
+          --platforms ios,android \
+          --no-overwrite
+
+    - name: Layer native shims into the generated projects
+      script: |
+        cd $CM_BUILD_DIR/mobile
+        # iOS background upload handler.
+        if [ -d ios/Runner ]; then
+          cp native/ios/BackgroundUploadHandler.swift ios/Runner/
+        fi
+        # Android background upload Kotlin shim — package matches the
+        # applicationId (com.americantv.app.upload).
+        if [ -d android/app/src/main/kotlin ]; then
+          mkdir -p android/app/src/main/kotlin/com/americantv/app/upload
+          cp native/android/BackgroundUploadHandler.kt \
+             android/app/src/main/kotlin/com/americantv/app/upload/
+        fi
+
+    - name: Copy iOS privacy manifest + entitlements
+      script: |
+        cd $CM_BUILD_DIR/mobile
+        if [ -d ios/Runner ]; then
+          cp native/ios/PrivacyInfo.xcprivacy ios/Runner/
+          cp native/ios/Runner.entitlements ios/Runner/
+        fi
+
+    - name: Patch Info.plist
+      # Apple rejects builds that touch privacy-sensitive APIs without
+      # NSCameraUsageDescription / NSPhotoLibraryUsageDescription / etc.
+      # Also locks ATS to HTTPS-only and adds background-modes for
+      # URLSession uploads + video PiP.
+      script: |
+        cd $CM_BUILD_DIR/mobile
+        if [ ! -f ios/Runner/Info.plist ]; then exit 0; fi
+        PB=/usr/libexec/PlistBuddy
+        P=ios/Runner/Info.plist
+
+        # ATS: HTTPS-only.
+        $PB -c "Delete :NSAppTransportSecurity" $P || true
+        $PB -c "Add :NSAppTransportSecurity dict" $P
+        $PB -c "Add :NSAppTransportSecurity:NSAllowsArbitraryLoads bool false" $P
+
+        # Usage description strings. -c "Add" fails if the key exists, so
+        # we Delete-then-Add each one to make the script idempotent.
+        for pair in \
+          "NSCameraUsageDescription|AmericanTV uses your camera to record video for upload to your channel." \
+          "NSPhotoLibraryUsageDescription|AmericanTV needs access to your photo library so you can upload videos and thumbnails." \
+          "NSPhotoLibraryAddUsageDescription|AmericanTV saves downloaded videos to your photo library." \
+          "NSMicrophoneUsageDescription|AmericanTV uses your microphone to record audio with video uploads." \
+          "NSUserTrackingUsageDescription|This identifier is used to deliver personalized ads to you. AmericanTV does not share this identifier with third parties."
+        do
+          KEY="${pair%%|*}"
+          VALUE="${pair#*|}"
+          $PB -c "Delete :$KEY" $P || true
+          $PB -c "Add :$KEY string $VALUE" $P
+        done
+
+        # Background modes.
+        $PB -c "Delete :UIBackgroundModes" $P || true
+        $PB -c "Add :UIBackgroundModes array" $P
+        $PB -c "Add :UIBackgroundModes:0 string audio" $P
+        $PB -c "Add :UIBackgroundModes:1 string fetch" $P
+        $PB -c "Add :UIBackgroundModes:2 string processing" $P
+
+        # Encryption export compliance — using only standard TLS / Apple
+        # frameworks, exempt under ECCN 5D992.c.
+        $PB -c "Delete :ITSAppUsesNonExemptEncryption" $P || true
+        $PB -c "Add :ITSAppUsesNonExemptEncryption bool false" $P
+
+    - name: Copy Android proguard rules + network security config
+      script: |
+        cd $CM_BUILD_DIR/mobile
+        if [ -d android/app ]; then
+          cp native/android/proguard-rules.pro android/app/
+          mkdir -p android/app/src/main/res/xml
+          cp native/android/network_security_config.xml \
+             android/app/src/main/res/xml/
+        fi
+
+    - name: Wire Android release shrinking + network security config
+      script: |
+        cd $CM_BUILD_DIR/mobile
+        if [ ! -f android/app/build.gradle ]; then exit 0; fi
+
+        # Add the networkSecurityConfig attribute to the <application> tag
+        # in AndroidManifest.xml — sed it in only if absent.
+        MF=android/app/src/main/AndroidManifest.xml
+        if ! grep -q 'networkSecurityConfig' $MF; then
+          sed -i.bak 's|<application|<application android:networkSecurityConfig="@xml/network_security_config"|' $MF
+        fi
+
+        # Add proguard wiring to build.gradle's release buildType — only
+        # if not already present.
+        BG=android/app/build.gradle
+        if ! grep -q "proguardFiles" $BG; then
+          # Replace the auto-generated `signingConfig` line with a multi-
+          # line block that adds minifyEnabled + proguard files.
+          /usr/bin/env perl -i -pe 'BEGIN{undef $/;} s|signingConfig signingConfigs.debug|signingConfig signingConfigs.release\n            minifyEnabled true\n            shrinkResources true\n            proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"|;' $BG
+        fi
+
+    - name: Drop launcher icon sources
+      # The PNG sources are kept in the Codemagic env group as base64
+      # blobs so the binary doesn't bloat the git history. Decode into
+      # place; flutter_launcher_icons reads them on the next step.
+      script: |
+        cd $CM_BUILD_DIR/mobile
+        mkdir -p assets/icon
+        if [ -n "$APP_ICON_PNG_B64" ]; then
+          echo "$APP_ICON_PNG_B64" | base64 -d > assets/icon/app-icon.png
+        fi
+        if [ -n "$APP_ICON_ADAPTIVE_FG_PNG_B64" ]; then
+          echo "$APP_ICON_ADAPTIVE_FG_PNG_B64" | base64 -d > assets/icon/app-icon-adaptive-foreground.png
+        fi
+
+    - name: Generate launcher icons
+      # ALLOW_DEFAULT_ICON gates the fallback:
+      #   - unset / "false": missing icon source FAILS the build. Used by
+      #     production workflows so we never accidentally ship the
+      #     Flutter default to the store.
+      #   - "true": missing icon source is logged and the build continues
+      #     with the Flutter default. Used by dev / TestFlight smoke runs
+      #     where the design assets aren't always wired up.
+      script: |
+        cd $CM_BUILD_DIR/mobile
+        if [ -f assets/icon/app-icon.png ]; then
+          dart run flutter_launcher_icons
+        elif [ "$ALLOW_DEFAULT_ICON" = "true" ]; then
+          echo "No app-icon.png; ALLOW_DEFAULT_ICON=true — using Flutter's default icon."
+        else
+          echo "FATAL: No app-icon.png and ALLOW_DEFAULT_ICON is not 'true'."
+          echo "Either populate APP_ICON_PNG_B64 in the env group OR set"
+          echo "ALLOW_DEFAULT_ICON=true on the workflow to acknowledge the"
+          echo "default-icon build."
+          exit 1
+        fi
+
+    - name: Rewrite platform identifiers
+      # flutter create with --org com.americantv would produce
+      # com.americantv.americantv on both platforms. We need:
+      #   Android applicationId/namespace: com.americantv.app
+      #   iOS    PRODUCT_BUNDLE_IDENTIFIER: com.americantv.userapp
+      # Each sed is guarded so the script is safe on either platform-only
+      # workflow.
+      script: |
+        cd $CM_BUILD_DIR/mobile
+
+        if [ -f android/app/build.gradle ]; then
+          sed -i.bak "s/applicationId \"[^\"]*\"/applicationId \"com.americantv.app\"/" \
+            android/app/build.gradle
+          sed -i.bak "s/namespace \"[^\"]*\"/namespace \"com.americantv.app\"/" \
+            android/app/build.gradle
+        fi
+        if [ -f android/app/build.gradle.kts ]; then
+          sed -i.bak "s/applicationId = \"[^\"]*\"/applicationId = \"com.americantv.app\"/" \
+            android/app/build.gradle.kts
+          sed -i.bak "s/namespace = \"[^\"]*\"/namespace = \"com.americantv.app\"/" \
+            android/app/build.gradle.kts
+        fi
+
+        if [ -f ios/Runner.xcodeproj/project.pbxproj ]; then
+          sed -i.bak \
+            "s/PRODUCT_BUNDLE_IDENTIFIER = [^;]*;/PRODUCT_BUNDLE_IDENTIFIER = com.americantv.userapp;/" \
+            ios/Runner.xcodeproj/project.pbxproj
+        fi
+
+    - name: Resolve dependencies
+      script: |
+        cd $CM_BUILD_DIR/mobile
+        flutter pub get
+
+    - name: Run codegen
+      script: |
+        cd $CM_BUILD_DIR/mobile
+        dart run build_runner build --delete-conflicting-outputs
+
+    - name: Analyze + test
+      script: |
+        cd $CM_BUILD_DIR/mobile
+        flutter analyze --no-fatal-infos
+        flutter test --reporter=expanded
+
+  env_groups_production: &env_groups_production
+    groups:
+      - americantv-prod  # holds API_BASE_URL, REVENUECAT_*, GOOGLE_OAUTH_*, etc.
+
+workflows:
+  # =====================================================================
+  # iOS — TestFlight
+  # =====================================================================
+  ios-testflight:
+    name: iOS — TestFlight
+    instance_type: mac_mini_m2
+    max_build_duration: 90
+    environment:
+      <<: *setup_flutter
+      <<: *env_groups_production
+      vars:
+        BUNDLE_ID: com.americantv.userapp
+        APP_STORE_APP_ID: 6743315031
+        APPLE_TEAM_ID: PDNU7JKBQZ
+        XCODE_WORKSPACE: ios/Runner.xcworkspace
+        XCODE_SCHEME: Runner
+        # TestFlight is willing to ship a Flutter-default icon during
+        # internal-tester smoke runs. App Store Review isn't (see
+        # ios-app-store workflow).
+        ALLOW_DEFAULT_ICON: "true"
+    integrations:
+      app_store_connect: americantv-app-store
+    cache:
+      cache_paths:
+        - $HOME/Library/Caches/CocoaPods
+        - $HOME/.pub-cache
+        - $CM_BUILD_DIR/mobile/.dart_tool
+
+    scripts:
+      - *base_scripts
+
+      - name: Write .env from group variables
+        script: |
+          cd $CM_BUILD_DIR/mobile
+          cat > .env <<EOF
+          API_BASE_URL=$API_BASE_URL
+          REVENUECAT_IOS_KEY=$REVENUECAT_IOS_KEY
+          REVENUECAT_ANDROID_KEY=$REVENUECAT_ANDROID_KEY
+          GOOGLE_OAUTH_CLIENT_ID_ANDROID=$GOOGLE_OAUTH_CLIENT_ID_ANDROID
+          ENABLE_CRASHLYTICS=true
+          EOF
+
+      - name: Drop Firebase config files
+        # FIREBASE_GOOGLE_SERVICE_INFO_PLIST is a base64-encoded
+        # GoogleService-Info.plist stored in the env group. Decode into
+        # place before pod install so the Firebase pods pick it up.
+        script: |
+          cd $CM_BUILD_DIR/mobile
+          if [ -n "$FIREBASE_GOOGLE_SERVICE_INFO_PLIST" ]; then
+            echo "$FIREBASE_GOOGLE_SERVICE_INFO_PLIST" | base64 -d > ios/Runner/GoogleService-Info.plist
+          else
+            echo "FIREBASE_GOOGLE_SERVICE_INFO_PLIST not set — Firebase will be skipped at runtime."
+          fi
+
+      - name: Install CocoaPods
+        script: |
+          cd $CM_BUILD_DIR/mobile/ios
+          pod install
+
+      - name: Set bundle identifier + version
+        script: |
+          cd $CM_BUILD_DIR/mobile
+          # Codemagic sets BUILD_NUMBER from App Store Connect's latest +1.
+          # BUILD_VERSION comes from the env group; bump per release.
+          xcrun agvtool new-version -all $BUILD_NUMBER
+          xcrun agvtool new-marketing-version $BUILD_VERSION
+
+      - name: Configure code signing
+        script: |
+          keychain initialize
+          # Pulls cert + provisioning profile from the App Store Connect
+          # integration. Filters to our bundle id + Distribution type.
+          app-store-connect fetch-signing-files "$BUNDLE_ID" \
+            --type IOS_APP_STORE \
+            --create
+          keychain add-certificates
+          xcode-project use-profiles
+
+      - name: Build IPA
+        script: |
+          cd $CM_BUILD_DIR/mobile
+          flutter build ipa --release \
+            --build-name=$BUILD_VERSION \
+            --build-number=$BUILD_NUMBER \
+            --export-options-plist=/Users/builder/export_options.plist
+
+      - name: Upload dSYMs to Crashlytics
+        # Crashlytics needs the debug symbols to symbolicate crash
+        # reports. iOS releases ship stripped binaries, so without this
+        # step every crash on TestFlight shows as a hex address tree.
+        # Skips gracefully if Firebase isn't configured (env var empty).
+        script: |
+          cd $CM_BUILD_DIR/mobile
+          if [ -z "$FIREBASE_GOOGLE_SERVICE_INFO_PLIST" ]; then
+            echo "Firebase not configured — skipping dSYM upload."
+            exit 0
+          fi
+          UPLOADER=$(find ios/Pods -name 'upload-symbols' -type f | head -n 1)
+          if [ -z "$UPLOADER" ]; then
+            echo "upload-symbols binary not in Pods/FirebaseCrashlytics — Crashlytics pod likely missing."
+            exit 0
+          fi
+          DSYMS_DIR=$(find build/ios/archive -type d -name 'dSYMs' | head -n 1)
+          if [ -z "$DSYMS_DIR" ] || [ ! -d "$DSYMS_DIR" ]; then
+            echo "No dSYMs directory found under build/ios/archive — skipping."
+            exit 0
+          fi
+          "$UPLOADER" \
+            -gsp ios/Runner/GoogleService-Info.plist \
+            -p ios \
+            "$DSYMS_DIR"
+
+    artifacts:
+      - mobile/build/ios/ipa/*.ipa
+      - mobile/build/ios/archive/**/dSYMs/**
+      - /tmp/xcodebuild_logs/*.log
+      - mobile/flutter_drive.log
+
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
+        beta_groups:
+          - Internal Testers
+      email:
+        recipients:
+          - $RELEASE_NOTIFY_EMAIL
+        notify:
+          success: true
+          failure: true
+
+  # =====================================================================
+  # iOS — App Store Review
+  # =====================================================================
+  ios-app-store:
+    name: iOS — App Store Review
+    instance_type: mac_mini_m2
+    max_build_duration: 90
+    environment:
+      <<: *setup_flutter
+      <<: *env_groups_production
+      vars:
+        BUNDLE_ID: com.americantv.userapp
+        APP_STORE_APP_ID: 6743315031
+        APPLE_TEAM_ID: PDNU7JKBQZ
+        # App Store Review rejects default-icon builds. No ALLOW_DEFAULT_ICON
+        # here so a missing APP_ICON_PNG_B64 fails the build loudly.
+    integrations:
+      app_store_connect: americantv-app-store
+
+    scripts:
+      - *base_scripts
+      - name: Write .env from group variables
+        script: |
+          cd $CM_BUILD_DIR/mobile
+          cat > .env <<EOF
+          API_BASE_URL=$API_BASE_URL
+          REVENUECAT_IOS_KEY=$REVENUECAT_IOS_KEY
+          REVENUECAT_ANDROID_KEY=$REVENUECAT_ANDROID_KEY
+          GOOGLE_OAUTH_CLIENT_ID_ANDROID=$GOOGLE_OAUTH_CLIENT_ID_ANDROID
+          ENABLE_CRASHLYTICS=true
+          EOF
+      - name: Drop Firebase config files
+        script: |
+          cd $CM_BUILD_DIR/mobile
+          if [ -n "$FIREBASE_GOOGLE_SERVICE_INFO_PLIST" ]; then
+            echo "$FIREBASE_GOOGLE_SERVICE_INFO_PLIST" | base64 -d > ios/Runner/GoogleService-Info.plist
+          fi
+      - name: Install CocoaPods
+        script: |
+          cd $CM_BUILD_DIR/mobile/ios
+          pod install
+      - name: Set bundle identifier + version
+        script: |
+          cd $CM_BUILD_DIR/mobile
+          xcrun agvtool new-version -all $BUILD_NUMBER
+          xcrun agvtool new-marketing-version $BUILD_VERSION
+      - name: Configure code signing
+        script: |
+          keychain initialize
+          app-store-connect fetch-signing-files "$BUNDLE_ID" \
+            --type IOS_APP_STORE \
+            --create
+          keychain add-certificates
+          xcode-project use-profiles
+      - name: Build IPA
+        script: |
+          cd $CM_BUILD_DIR/mobile
+          flutter build ipa --release \
+            --build-name=$BUILD_VERSION \
+            --build-number=$BUILD_NUMBER \
+            --export-options-plist=/Users/builder/export_options.plist
+
+      - name: Upload dSYMs to Crashlytics
+        script: |
+          cd $CM_BUILD_DIR/mobile
+          if [ -z "$FIREBASE_GOOGLE_SERVICE_INFO_PLIST" ]; then
+            echo "Firebase not configured — skipping dSYM upload."
+            exit 0
+          fi
+          UPLOADER=$(find ios/Pods -name 'upload-symbols' -type f | head -n 1)
+          DSYMS_DIR=$(find build/ios/archive -type d -name 'dSYMs' | head -n 1)
+          if [ -z "$UPLOADER" ] || [ -z "$DSYMS_DIR" ]; then
+            echo "Missing upload-symbols binary or dSYMs directory — skipping."
+            exit 0
+          fi
+          "$UPLOADER" \
+            -gsp ios/Runner/GoogleService-Info.plist \
+            -p ios \
+            "$DSYMS_DIR"
+
+    artifacts:
+      - mobile/build/ios/ipa/*.ipa
+      - mobile/build/ios/archive/**/dSYMs/**
+      - /tmp/xcodebuild_logs/*.log
+
+    publishing:
+      app_store_connect:
+        auth: integration
+        # Submits the build to App Store Review (not TestFlight).
+        submit_to_app_store: true
+      email:
+        recipients:
+          - $RELEASE_NOTIFY_EMAIL
+
+  # =====================================================================
+  # Android — Internal Testing
+  # =====================================================================
+  android-internal:
+    name: Android — Internal Testing
+    instance_type: linux_x2
+    max_build_duration: 60
+    environment:
+      <<: *setup_flutter
+      <<: *env_groups_production
+      android_signing:
+        - americantv-keystore
+      vars:
+        PACKAGE_NAME: com.americantv.app
+        GOOGLE_PLAY_TRACK: internal
+        ALLOW_DEFAULT_ICON: "true"
+    cache:
+      cache_paths:
+        - $HOME/.gradle/caches
+        - $HOME/.pub-cache
+        - $CM_BUILD_DIR/mobile/.dart_tool
+
+    scripts:
+      - *base_scripts
+
+      - name: Write .env from group variables
+        script: |
+          cd $CM_BUILD_DIR/mobile
+          cat > .env <<EOF
+          API_BASE_URL=$API_BASE_URL
+          REVENUECAT_IOS_KEY=$REVENUECAT_IOS_KEY
+          REVENUECAT_ANDROID_KEY=$REVENUECAT_ANDROID_KEY
+          GOOGLE_OAUTH_CLIENT_ID_ANDROID=$GOOGLE_OAUTH_CLIENT_ID_ANDROID
+          ENABLE_CRASHLYTICS=true
+          EOF
+
+      - name: Drop google-services.json
+        # FIREBASE_GOOGLE_SERVICES_JSON is a base64-encoded
+        # google-services.json stored in the env group.
+        script: |
+          cd $CM_BUILD_DIR/mobile
+          if [ -n "$FIREBASE_GOOGLE_SERVICES_JSON" ]; then
+            mkdir -p android/app
+            echo "$FIREBASE_GOOGLE_SERVICES_JSON" | base64 -d > android/app/google-services.json
+          fi
+
+      - name: Bump versionCode + versionName
+        # versionCode = $BUILD_NUMBER, versionName = $BUILD_VERSION.
+        # Flutter reads these via --build-name + --build-number.
+        script: echo "Using build-name=$BUILD_VERSION build-number=$BUILD_NUMBER"
+
+      - name: Build AAB
+        script: |
+          cd $CM_BUILD_DIR/mobile
+          flutter build appbundle --release \
+            --build-name=$BUILD_VERSION \
+            --build-number=$BUILD_NUMBER
+
+    artifacts:
+      - mobile/build/app/outputs/bundle/release/app-release.aab
+      - mobile/build/app/outputs/mapping/release/mapping.txt
+
+    publishing:
+      google_play:
+        credentials: $GCLOUD_SERVICE_ACCOUNT_CREDENTIALS
+        track: $GOOGLE_PLAY_TRACK
+        submit_as_draft: false
+      email:
+        recipients:
+          - $RELEASE_NOTIFY_EMAIL
+
+  # =====================================================================
+  # Android — Production
+  # =====================================================================
+  android-production:
+    name: Android — Production
+    instance_type: linux_x2
+    max_build_duration: 60
+    environment:
+      <<: *setup_flutter
+      <<: *env_groups_production
+      android_signing:
+        - americantv-keystore
+      vars:
+        PACKAGE_NAME: com.americantv.app
+        GOOGLE_PLAY_TRACK: production
+        # Staged rollout — 10% on first push to production. Bump in the
+        # Play Console dashboard once the release is healthy.
+        ROLLOUT_FRACTION: 0.1
+        # Production builds must ship the brand icon; missing icon fails.
+
+    scripts:
+      - *base_scripts
+      - name: Write .env from group variables
+        script: |
+          cd $CM_BUILD_DIR/mobile
+          cat > .env <<EOF
+          API_BASE_URL=$API_BASE_URL
+          REVENUECAT_IOS_KEY=$REVENUECAT_IOS_KEY
+          REVENUECAT_ANDROID_KEY=$REVENUECAT_ANDROID_KEY
+          GOOGLE_OAUTH_CLIENT_ID_ANDROID=$GOOGLE_OAUTH_CLIENT_ID_ANDROID
+          ENABLE_CRASHLYTICS=true
+          EOF
+      - name: Drop google-services.json
+        script: |
+          cd $CM_BUILD_DIR/mobile
+          if [ -n "$FIREBASE_GOOGLE_SERVICES_JSON" ]; then
+            mkdir -p android/app
+            echo "$FIREBASE_GOOGLE_SERVICES_JSON" | base64 -d > android/app/google-services.json
+          fi
+      - name: Build AAB
+        script: |
+          cd $CM_BUILD_DIR/mobile
+          flutter build appbundle --release \
+            --build-name=$BUILD_VERSION \
+            --build-number=$BUILD_NUMBER
+
+    artifacts:
+      - mobile/build/app/outputs/bundle/release/app-release.aab
+      - mobile/build/app/outputs/mapping/release/mapping.txt
+
+    publishing:
+      google_play:
+        credentials: $GCLOUD_SERVICE_ACCOUNT_CREDENTIALS
+        track: production
+        in_app_update_priority: 3
+        rollout_fraction: $ROLLOUT_FRACTION
+      email:
+        recipients:
+          - $RELEASE_NOTIFY_EMAIL

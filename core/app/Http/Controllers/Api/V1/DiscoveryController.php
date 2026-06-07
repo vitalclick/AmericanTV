@@ -73,9 +73,18 @@ class DiscoveryController extends Controller
 
     public function showVideo(Request $request, string $slug): JsonResponse
     {
+        $userId = $request->user()?->id;
+
         $video = $this->baseFeedQuery()
-            ->with(
-                'user',
+            ->with([
+                'user' => function ($q) use ($userId) {
+                    if ($userId) {
+                        // Bring just the caller's subscriber row through so
+                        // VideoDetailResource::isSubscribed can answer without
+                        // a second query.
+                        $q->with(['subscribers' => fn ($s) => $s->where('following_id', $userId)]);
+                    }
+                },
                 'videoFiles',
                 'category',
                 'tags',
@@ -83,7 +92,7 @@ class DiscoveryController extends Controller
                 'userReactions',
                 'plans',
                 'playlists.plans',
-            )
+            ])
             ->withCount('allComments as all_comments_count')
             ->where('slug', $slug)
             ->where('is_shorts_video', Status::NO)

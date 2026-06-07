@@ -1,4 +1,4 @@
-package vip.americantv.upload
+package com.americantv.app.upload
 
 import android.content.Context
 import androidx.work.*
@@ -25,8 +25,9 @@ import java.util.concurrent.TimeUnit
  *
  * Wiring (do this once after `flutter create`):
  *
- * 1. Drop this file into `android/app/src/main/kotlin/vip/americantv/upload/`.
- *    (Or update the package declaration to match your app's package.)
+ * 1. Drop this file into `android/app/src/main/kotlin/com/americantv/app/upload/`.
+ *    (The package declaration above matches our applicationId of
+ *     com.americantv.app — change both together if you ever rename the app.)
  * 2. In `MainActivity.kt`, register the plugin against the engine:
  *
  *    ```kotlin

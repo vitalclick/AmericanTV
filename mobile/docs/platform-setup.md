@@ -9,11 +9,11 @@ After running that, apply the snippets below.
 
 ```gradle
 android {
-    namespace "com.americantv"
+    namespace "com.americantv.app"
     compileSdkVersion 34
 
     defaultConfig {
-        applicationId "com.americantv"
+        applicationId "com.americantv.app"
         minSdkVersion 23       // required by firebase_messaging
         targetSdkVersion 34
         multiDexEnabled true
@@ -170,16 +170,16 @@ degrades gracefully.
 
 1. Copy it into the generated Android Kotlin source tree:
    ```
-   mkdir -p android/app/src/main/kotlin/vip/americantv/upload
+   mkdir -p android/app/src/main/kotlin/com/americantv/app/upload
    cp ../native/android/BackgroundUploadHandler.kt \
-      android/app/src/main/kotlin/vip/americantv/upload/
+      android/app/src/main/kotlin/com/americantv/app/upload/
    ```
-2. Edit `android/app/src/main/kotlin/com/americantv/MainActivity.kt`:
+2. Edit `android/app/src/main/kotlin/com/americantv/app/MainActivity.kt`:
 
    ```kotlin
    import io.flutter.embedding.android.FlutterActivity
    import io.flutter.embedding.engine.FlutterEngine
-   import vip.americantv.upload.BackgroundUploadHandler
+   import com.americantv.app.upload.BackgroundUploadHandler
 
    class MainActivity : FlutterActivity() {
      override fun configureFlutterEngine(flutterEngine: FlutterEngine) {

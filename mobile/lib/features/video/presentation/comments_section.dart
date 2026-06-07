@@ -60,10 +60,63 @@ class _CommentsNotifier extends AutoDisposeFamilyAsyncNotifier<List<Comment>, in
   }
 
   Future<void> react(int commentId, int isLike) async {
-    final res = await ref
-        .read(commentRepositoryProvider)
-        .reactToComment(commentId: commentId, isLike: isLike);
-    state = AsyncData(_apply(state.valueOrNull ?? const [], commentId, res));
+    // Optimistic: apply the toggle to local state immediately, then send.
+    // Same toggle / swap / remove semantics as the video reaction bar.
+    final current = state.valueOrNull ?? const <Comment>[];
+    final direction = isLike == 1 ? 1 : -1;
+    final after = _applyOptimisticToggle(current, commentId, direction);
+    if (after != null) state = AsyncData(after);
+
+    try {
+      final res = await ref
+          .read(commentRepositoryProvider)
+          .reactToComment(commentId: commentId, isLike: isLike);
+      state = AsyncData(_apply(state.valueOrNull ?? const [], commentId, res));
+    } catch (_) {
+      // Roll back to whatever state had before our optimistic mutation.
+      if (after != null) state = AsyncData(current);
+    }
+  }
+
+  /// Walks the list recursively; returns null if the comment is missing
+  /// (in which case we leave state untouched and let the server response
+  /// repair it).
+  List<Comment>? _applyOptimisticToggle(List<Comment> list, int id, int direction) {
+    var found = false;
+    final next = list.map((c) {
+      if (c.id == id) {
+        found = true;
+        return _toggleOne(c, direction);
+      }
+      if (c.replies.isNotEmpty) {
+        final repliesAfter = _applyOptimisticToggle(c.replies, id, direction);
+        if (repliesAfter != null) {
+          found = true;
+          return c.copyWith(replies: repliesAfter);
+        }
+      }
+      return c;
+    }).toList();
+    return found ? next : null;
+  }
+
+  Comment _toggleOne(Comment c, int direction) {
+    if (c.userReaction == direction) {
+      return c.copyWith(
+        userReaction: 0,
+        likes: direction == 1 ? c.likes - 1 : c.likes,
+      );
+    }
+    if (c.userReaction == -direction) {
+      return c.copyWith(
+        userReaction: direction,
+        likes: direction == 1 ? c.likes + 1 : c.likes - 1,
+      );
+    }
+    return c.copyWith(
+      userReaction: direction,
+      likes: direction == 1 ? c.likes + 1 : c.likes,
+    );
   }
 
   // Recurses into replies so a reaction on a reply also updates state.

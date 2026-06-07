@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/widgets/dropped_ops_banner.dart';
 import '../../auth/application/auth_controller.dart';
 import '../../feed/presentation/feed_screen.dart';
 import '../../library/presentation/library_screen.dart';
@@ -68,13 +69,24 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           ),
         ],
       ),
-      body: IndexedStack(
-        index: _tab,
-        children: const [
-          FeedScreen(),
-          SearchScreen(),
-          LibraryScreen(),
-          ProfileScreen(),
+      body: Column(
+        children: [
+          // Banner sits above every tab so a dropped offline op surfaces
+          // regardless of where the user lands cold. Pull-to-refresh on the
+          // tab contents doesn't dismiss it — explicit Dismiss is the only
+          // path to clear.
+          const DroppedOpsBanner(),
+          Expanded(
+            child: IndexedStack(
+              index: _tab,
+              children: const [
+                FeedScreen(),
+                SearchScreen(),
+                LibraryScreen(),
+                ProfileScreen(),
+              ],
+            ),
+          ),
         ],
       ),
       bottomNavigationBar: NavigationBar(

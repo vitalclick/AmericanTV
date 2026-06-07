@@ -76,7 +76,9 @@ class UploadPublishTest extends TestCase
         }
 
         // Disable ffmpeg so VideoManager skips the X264 transcode step.
-        $this->stubGsKey('ffmpeg_status', 0);
+        // The TestCase setUp already defaults ffmpeg_status to false, but
+        // make it explicit here so future readers don't grep for the gate.
+        $this->gsOverride('ffmpeg_status', false);
 
         $mergeResponse = $this->withToken($token)->postJson('/api/v1/me/videos/merge', [
             'fileName'    => $fileName,
@@ -178,20 +180,4 @@ class UploadPublishTest extends TestCase
         ]);
     }
 
-    private function stubGsKey(string $key, mixed $value): void
-    {
-        // gs() looks at a GeneralSetting row. For the few keys this test
-        // cares about, set them directly on the cached settings array if
-        // it exists.
-        if (! function_exists('gs')) return;
-        try {
-            $cached = gs();
-            if (is_object($cached)) {
-                $cached->{$key} = $value;
-            }
-        } catch (\Throwable $e) {
-            // gs() not gettable in this env — controller will fall through
-            // to the null/false branch which is what we want anyway.
-        }
-    }
 }

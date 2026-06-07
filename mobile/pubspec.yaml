@@ -69,7 +69,31 @@ dev_dependencies:
   freezed: ^2.5.7
   json_serializable: ^6.8.0
 
+  # Generates iOS + Android launcher icons from a single 1024x1024 source.
+  # Run: `dart run flutter_launcher_icons`
+  flutter_launcher_icons: ^0.14.1
+
 flutter:
   uses-material-design: true
   assets:
     - .env
+
+# ----- App icon generation -----
+# Source: assets/icon/app-icon.png (1024x1024 PNG with no alpha for iOS).
+# Adaptive: assets/icon/app-icon-adaptive-foreground.png is the foreground
+# layer (transparent background) for Android adaptive icons; the
+# background colour comes from #E53935 (brand red).
+flutter_launcher_icons:
+  android: "ic_launcher"
+  ios: true
+  remove_alpha_ios: true
+  image_path: "assets/icon/app-icon.png"
+  min_sdk_android: 23
+  adaptive_icon_background: "#E53935"
+  adaptive_icon_foreground: "assets/icon/app-icon-adaptive-foreground.png"
+  web:
+    generate: false
+  macos:
+    generate: false
+  windows:
+    generate: false

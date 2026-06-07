@@ -44,6 +44,7 @@ class VideoDetailResource extends VideoSummaryResource
             'comments'      => $video->all_comments_count ?? $video->comments_count ?? 0,
             'user_reaction' => $userReaction,
             'user_has_access' => $video->showEligible(),
+            'is_subscribed' => $this->isSubscribed($video, $request),
             'subtitles'     => $video->subtitles->map(fn ($s) => [
                 'language' => $s->language ?? $s->title,
                 'url'      => $s->subtitle ? asset(getFilePath('subtitle') . '/' . $s->subtitle) : null,
@@ -53,6 +54,27 @@ class VideoDetailResource extends VideoSummaryResource
             // without a second round-trip.
             'access_plans'  => $this->buildAccessPlans($video),
         ];
+    }
+
+    /**
+     * Has the caller subscribed to this video's uploader? Returns false when
+     * the caller is anonymous or hasn't subscribed; never throws. Uses the
+     * eager-loaded user.subscribers relation when present so this stays at
+     * one query for the whole detail fetch.
+     */
+    private function isSubscribed($video, Request $request): bool
+    {
+        $user = $request->user();
+        if (! $user || ! $video->user) return false;
+        if ($user->id === $video->user_id) return false; // own channel.
+
+        if ($video->user->relationLoaded('subscribers')) {
+            return $video->user->subscribers->contains('following_id', $user->id);
+        }
+        return $video->user
+            ->subscribers()
+            ->where('following_id', $user->id)
+            ->exists();
     }
 
     /**

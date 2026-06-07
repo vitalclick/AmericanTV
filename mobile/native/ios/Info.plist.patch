@@ -1,0 +1,85 @@
+<!--
+  Info.plist additions for production. After `flutter create`, merge each
+  block below into `ios/Runner/Info.plist`. The codemagic pipeline does
+  this automatically via /usr/libexec/PlistBuddy — see the "Patch
+  Info.plist" step in codemagic.yaml.
+
+  If you're editing locally, open ios/Runner/Info.plist in Xcode and
+  paste each <key>...</key><...> pair as a child of the root <dict>.
+-->
+
+<!-- ====================================================================
+     App Transport Security: HTTPS-only with no exceptions.
+     Remove the staging exception block on production builds.
+==================================================================== -->
+<key>NSAppTransportSecurity</key>
+<dict>
+    <key>NSAllowsArbitraryLoads</key>
+    <false/>
+    <!-- Add exception domains here only if your staging Laravel host is HTTP.
+    <key>NSExceptionDomains</key>
+    <dict>
+        <key>staging.americantv.vip</key>
+        <dict>
+            <key>NSExceptionAllowsInsecureHTTPLoads</key>
+            <true/>
+            <key>NSIncludesSubdomains</key>
+            <true/>
+        </dict>
+    </dict>
+    -->
+</dict>
+
+<!-- ====================================================================
+     Usage description strings — Apple rejects any build that touches a
+     privacy-sensitive API without one. Each maps to a specific capability
+     the user will see in the system permission prompt.
+==================================================================== -->
+<key>NSCameraUsageDescription</key>
+<string>AmericanTV uses your camera to record video for upload to your channel.</string>
+
+<key>NSPhotoLibraryUsageDescription</key>
+<string>AmericanTV needs access to your photo library so you can upload videos and thumbnails.</string>
+
+<key>NSPhotoLibraryAddUsageDescription</key>
+<string>AmericanTV saves downloaded videos to your photo library.</string>
+
+<key>NSMicrophoneUsageDescription</key>
+<string>AmericanTV uses your microphone to record audio with video uploads.</string>
+
+<key>NSUserTrackingUsageDescription</key>
+<string>This identifier is used to deliver personalized ads to you. AmericanTV does not share this identifier with third parties.</string>
+
+<!-- ====================================================================
+     Background modes — required so URLSession background uploads continue
+     when the app is suspended, and so video playback continues with screen
+     locked / Picture-in-Picture.
+==================================================================== -->
+<key>UIBackgroundModes</key>
+<array>
+    <string>audio</string>
+    <string>fetch</string>
+    <string>processing</string>
+</array>
+
+<!-- ====================================================================
+     Encryption export compliance. We use HTTPS (TLS) and Sign in with Apple
+     (cryptographic auth) — both qualify for the "uses standard encryption"
+     exemption per ECCN 5D992.c.
+==================================================================== -->
+<key>ITSAppUsesNonExemptEncryption</key>
+<false/>
+
+<!-- ====================================================================
+     Apple Sign-In is the only social provider mandated on iOS. The
+     capability needs to be in Xcode Signing & Capabilities AND declared
+     here. The capability lookup is via .entitlements (in the codemagic
+     pipeline) but Info.plist needs the SKAdNetwork list if we ever push
+     attribution-targeted ads.
+==================================================================== -->
+<!-- No SKAdNetwork identifiers yet; add when AdMob attribution lands. -->
+
+<!-- ====================================================================
+     Universal Links / Associated Domains require a separate
+     americantv.userapp.entitlements file. See entitlements.plist below.
+==================================================================== -->

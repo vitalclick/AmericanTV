@@ -140,6 +140,7 @@ class LibraryRepository {
   }
 
   static const _pendingOpsKey = 'cache:watch-later:pending-ops';
+  static const _droppedOpsKey = 'cache:watch-later:dropped';
 
   /// Add to watch-later with offline queueing: if the network is down we
   /// still record the intent locally and replay on next successful fetch.
@@ -178,6 +179,7 @@ class LibraryRepository {
     if (ops.isEmpty) return;
 
     final survived = <Map<String, dynamic>>[];
+    final dropped = <Map<String, dynamic>>[];
     for (final op in ops) {
       final action = op['action'] as String;
       final videoId = op['video_id'] as int;
@@ -187,8 +189,21 @@ class LibraryRepository {
         } else {
           await _dio.delete<void>('/watch-later/$videoId');
         }
-      } on DioException {
-        survived.add(op);
+      } on DioException catch (e) {
+        if (e.type == DioExceptionType.connectionError ||
+            e.type == DioExceptionType.connectionTimeout) {
+          survived.add(op);
+        } else {
+          // 4xx during replay — the video was almost certainly deleted
+          // while the user was offline. Record so the banner in the
+          // Library tab can surface it; without this the add/remove
+          // request silently disappears.
+          dropped.add({
+            ...op,
+            'status': e.response?.statusCode,
+            'dropped_at': DateTime.now().toIso8601String(),
+          });
+        }
       }
     }
     if (survived.isEmpty) {
@@ -196,7 +211,29 @@ class LibraryRepository {
     } else {
       await _cache.writeJson(_pendingOpsKey, {'ops': survived});
     }
+    if (dropped.isNotEmpty) {
+      final existing = await _cache.readJson(_droppedOpsKey);
+      final all = ((existing?['ops'] as List?) ?? const [])
+          .cast<Map<String, dynamic>>()
+          .toList()
+        ..addAll(dropped);
+      while (all.length > 20) {
+        all.removeAt(0);
+      }
+      await _cache.writeJson(_droppedOpsKey, {'ops': all});
+    }
   }
+
+  /// Watch-later ops the server rejected during replay (typically because
+  /// the target video was deleted while the user was offline). The Library
+  /// tab surfaces these in a one-time banner.
+  Future<List<DroppedWatchLaterOp>> droppedOps() async {
+    final raw = await _cache.readJson(_droppedOpsKey);
+    final ops = ((raw?['ops'] as List?) ?? const []).cast<Map<String, dynamic>>();
+    return ops.map(DroppedWatchLaterOp.fromJson).toList();
+  }
+
+  Future<void> acknowledgeDroppedOps() => _cache.remove(_droppedOpsKey);
 
   Future<void> _enqueuePending(String action, int videoId) async {
     final raw = await _cache.readJson(_pendingOpsKey);
@@ -284,4 +321,28 @@ class ActivePlan {
   final String slug;
   final String name;
   final DateTime expiresAt;
+}
+
+class DroppedWatchLaterOp {
+  const DroppedWatchLaterOp({
+    required this.action,
+    required this.videoId,
+    required this.droppedAt,
+    this.status,
+  });
+
+  factory DroppedWatchLaterOp.fromJson(Map<String, dynamic> json) {
+    return DroppedWatchLaterOp(
+      action: json['action'] as String,
+      videoId: json['video_id'] as int,
+      status: json['status'] as int?,
+      droppedAt: DateTime.tryParse(json['dropped_at'] as String? ?? '') ??
+          DateTime.now(),
+    );
+  }
+
+  final String action; // 'add' | 'remove'
+  final int videoId;
+  final int? status;
+  final DateTime droppedAt;
 }

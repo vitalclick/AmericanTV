@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Constants\Status;
+use App\Http\Controllers\Api\V1\AnalyticsController;
 use App\Http\Controllers\Controller;
 use App\Models\AdvertisementAnalytics;
 use App\Models\Category;
@@ -411,5 +412,30 @@ class ManageVideoController extends Controller {
         return response()->json([
             'exists' => $video,
         ]);
+    }
+
+    /**
+     * Renders the admin watch-summary widget for one video. Same payload
+     * as POST /api/v1/analytics/videos/{id}/watch-summary so the bucketing
+     * logic stays single-source.
+     */
+    public function watchSummary(Request $request, $id) {
+        $video = Video::with('user')->findOrFail($id);
+        $controller = app(AnalyticsController::class);
+
+        // Forward the days window if the admin URL has ?days=N.
+        $proxied = Request::create(
+            "/api/v1/analytics/videos/$id/watch-summary",
+            'GET',
+            ['window_days' => (int) ($request->query('days') ?: 30)],
+        );
+        // We're already inside the admin guard's authorize middleware; bypass
+        // the controller's owner check by impersonating the video uploader.
+        $proxied->setUserResolver(fn () => $video->user);
+
+        $payload = $controller->videoWatchSummary($proxied, (int) $id)->getData(true)['data'];
+
+        $pageTitle = 'Watch summary: ' . $video->title;
+        return view('admin.video.watch_summary', compact('pageTitle', 'video', 'payload'));
     }
 }

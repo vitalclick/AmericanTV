@@ -16,6 +16,8 @@ class CommentRepository {
   final CacheService _cache;
 
   String _cacheKey(int videoId) => 'cache:comments:$videoId:page-1';
+  static const _pendingCommentsKey = 'cache:comments:pending';
+  static const _droppedOpsKey = 'cache:comments:dropped';
 
   Future<PaginatedComments?> cachedFirstPage(int videoId) async {
     final raw = await _cache.readJson(_cacheKey(videoId));
@@ -31,6 +33,13 @@ class CommentRepository {
   }
 
   Future<PaginatedComments> list(int videoId, {int page = 1}) async {
+    if (page == 1) {
+      // Replay offline-queued comments before the read so the server-side
+      // list already reflects the user's pending intent. Fire-and-forget
+      // so flush latency doesn't gate the read.
+      // ignore: discarded_futures
+      flushPending();
+    }
     try {
       final response = await _dio.get<Map<String, dynamic>>(
         '/videos/$videoId/comments',
@@ -73,6 +82,14 @@ class CommentRepository {
         (response.data!['data'] as Map<String, dynamic>),
       );
     } on DioException catch (e) {
+      if (_isNetwork(e)) {
+        await _enqueuePending(kind: 'comment', videoId: videoId, body: body);
+        return Comment(
+          id: -1, // sentinel: local-only until replay succeeds.
+          body: body,
+          createdAt: DateTime.now(),
+        );
+      }
       throw ApiException.fromDio(e);
     }
   }
@@ -87,9 +104,112 @@ class CommentRepository {
         (response.data!['data'] as Map<String, dynamic>),
       );
     } on DioException catch (e) {
+      if (_isNetwork(e)) {
+        await _enqueuePending(kind: 'reply', parentId: parentId, body: body);
+        return Comment(
+          id: -1,
+          body: body,
+          parentId: parentId,
+          createdAt: DateTime.now(),
+        );
+      }
       throw ApiException.fromDio(e);
     }
   }
+
+  bool _isNetwork(DioException e) =>
+      e.type == DioExceptionType.connectionError ||
+      e.type == DioExceptionType.connectionTimeout;
+
+  Future<void> _enqueuePending({
+    required String kind,
+    int? videoId,
+    int? parentId,
+    required String body,
+  }) async {
+    final raw = await _cache.readJson(_pendingCommentsKey);
+    final ops = ((raw?['ops'] as List?) ?? const []).cast<Map<String, dynamic>>().toList();
+    ops.add({
+      'kind': kind,
+      if (videoId != null) 'video_id': videoId,
+      if (parentId != null) 'parent_id': parentId,
+      'body': body,
+      'queued_at': DateTime.now().toIso8601String(),
+    });
+    await _cache.writeJson(_pendingCommentsKey, {'ops': ops});
+  }
+
+  /// Replays queued offline comments. Called from list(page: 1) so a
+  /// successful read also flushes pending writes — same trick we use
+  /// for watch-later.
+  Future<void> flushPending() async {
+    final raw = await _cache.readJson(_pendingCommentsKey);
+    final ops = ((raw?['ops'] as List?) ?? const []).cast<Map<String, dynamic>>();
+    if (ops.isEmpty) return;
+
+    final survived = <Map<String, dynamic>>[];
+    final dropped = <Map<String, dynamic>>[];
+
+    for (final op in ops) {
+      try {
+        if (op['kind'] == 'comment') {
+          await _dio.post<void>(
+            '/videos/${op['video_id']}/comments',
+            data: {'body': op['body']},
+          );
+        } else if (op['kind'] == 'reply') {
+          await _dio.post<void>(
+            '/comments/${op['parent_id']}/reply',
+            data: {'body': op['body']},
+          );
+        }
+      } on DioException catch (e) {
+        if (_isNetwork(e)) {
+          survived.add(op);
+        } else {
+          // 4xx during replay — target almost certainly deleted while
+          // offline. Record the drop so the next-launch banner can
+          // surface it; without this the user's comment vanishes
+          // silently.
+          dropped.add({
+            ...op,
+            'status': e.response?.statusCode,
+            'dropped_at': DateTime.now().toIso8601String(),
+          });
+        }
+      }
+    }
+
+    if (survived.isEmpty) {
+      await _cache.remove(_pendingCommentsKey);
+    } else {
+      await _cache.writeJson(_pendingCommentsKey, {'ops': survived});
+    }
+
+    if (dropped.isNotEmpty) {
+      final existing = await _cache.readJson(_droppedOpsKey);
+      final all = ((existing?['ops'] as List?) ?? const [])
+          .cast<Map<String, dynamic>>()
+          .toList()
+        ..addAll(dropped);
+      // Cap at 20 so a user offline for weeks doesn't return to an
+      // unscrollable banner. FIFO eviction.
+      while (all.length > 20) {
+        all.removeAt(0);
+      }
+      await _cache.writeJson(_droppedOpsKey, {'ops': all});
+    }
+  }
+
+  /// Surfaces ops that the server rejected during replay. The banner reads
+  /// these on launch and clears them via acknowledgeDroppedOps.
+  Future<List<DroppedComment>> droppedOps() async {
+    final raw = await _cache.readJson(_droppedOpsKey);
+    final ops = ((raw?['ops'] as List?) ?? const []).cast<Map<String, dynamic>>();
+    return ops.map(DroppedComment.fromJson).toList();
+  }
+
+  Future<void> acknowledgeDroppedOps() => _cache.remove(_droppedOpsKey);
 
   Future<CommentReactionState> reactToComment({required int commentId, required int isLike}) async {
     try {
@@ -102,6 +222,36 @@ class CommentRepository {
       throw ApiException.fromDio(e);
     }
   }
+}
+
+class DroppedComment {
+  const DroppedComment({
+    required this.kind,
+    required this.body,
+    required this.droppedAt,
+    this.videoId,
+    this.parentId,
+    this.status,
+  });
+
+  factory DroppedComment.fromJson(Map<String, dynamic> json) {
+    return DroppedComment(
+      kind: json['kind'] as String,
+      body: json['body'] as String? ?? '',
+      videoId: json['video_id'] as int?,
+      parentId: json['parent_id'] as int?,
+      status: json['status'] as int?,
+      droppedAt: DateTime.tryParse(json['dropped_at'] as String? ?? '') ??
+          DateTime.now(),
+    );
+  }
+
+  final String kind;
+  final String body;
+  final int? videoId;
+  final int? parentId;
+  final int? status;
+  final DateTime droppedAt;
 }
 
 class CommentReactionState {
