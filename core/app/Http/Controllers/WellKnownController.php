@@ -22,18 +22,23 @@ class WellKnownController extends Controller
 {
     /**
      * Apple App Site Association. The `paths` array tells iOS which URL
-     * patterns on americantv.vip should open the app instead of Safari.
+     * patterns on the current host should open the app instead of Safari.
      * We claim everything under /video and /channel; /admin and /api
      * stay in the browser.
+     *
+     * Team ID + bundle ID come from env so staging environments can serve
+     * their own AASA (different Team / bundle) without a code change.
      */
     public function appleAppSiteAssociation(): Response
     {
+        $appId = $this->iosAppId();
+
         $payload = [
             'applinks' => [
                 'apps' => [],
                 'details' => [
                     [
-                        'appID' => 'PDNU7JKBQZ.com.americantv.userapp',
+                        'appID' => $appId,
                         'paths' => [
                             '/video/*',
                             '/play/*',
@@ -50,11 +55,9 @@ class WellKnownController extends Controller
                 ],
             ],
             // webcredentials lets iOS suggest saved passwords on the
-            // login screen if it has them for americantv.vip.
+            // login screen if it has them for this host.
             'webcredentials' => [
-                'apps' => [
-                    'PDNU7JKBQZ.com.americantv.userapp',
-                ],
+                'apps' => [$appId],
             ],
         ];
 
@@ -72,7 +75,8 @@ class WellKnownController extends Controller
      *     -alias americantv | grep "SHA256:"
      *
      * Set it as `ANDROID_RELEASE_SHA256` in the Laravel .env so a key
-     * rotation doesn't require a code deploy.
+     * rotation doesn't require a code deploy. Package name comes from
+     * IOS / ANDROID_PACKAGE_NAME env so staging can ship its own.
      */
     public function androidAssetLinks(): Response
     {
@@ -91,7 +95,7 @@ class WellKnownController extends Controller
                 ],
                 'target' => [
                     'namespace' => 'android_app',
-                    'package_name' => 'com.americantv.app',
+                    'package_name' => $this->androidPackageName(),
                     'sha256_cert_fingerprints' => [$fingerprint],
                 ],
             ],
@@ -100,5 +104,23 @@ class WellKnownController extends Controller
         return response()
             ->json($payload, 200, [], JSON_UNESCAPED_SLASHES)
             ->header('Content-Type', 'application/json');
+    }
+
+    /**
+     * Apple's `appID` field is `{TeamID}.{bundleID}`. Pulled from env so
+     * staging can serve a staging Team / bundle. Defaults match
+     * production so existing deploys without the env vars set keep
+     * working unchanged.
+     */
+    private function iosAppId(): string
+    {
+        $teamId   = (string) env('IOS_APPLE_TEAM_ID', 'PDNU7JKBQZ');
+        $bundleId = (string) env('IOS_BUNDLE_ID', 'com.americantv.userapp');
+        return "{$teamId}.{$bundleId}";
+    }
+
+    private function androidPackageName(): string
+    {
+        return (string) env('ANDROID_PACKAGE_NAME', 'com.americantv.app');
     }
 }

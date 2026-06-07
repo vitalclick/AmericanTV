@@ -62,4 +62,37 @@ class WellKnownTest extends TestCase
             $payload[0]['target']['sha256_cert_fingerprints'],
         );
     }
+
+    public function test_staging_env_can_override_team_and_bundle_ids(): void
+    {
+        // Staging serves its own AASA pointing at a staging Team + bundle,
+        // so a tester walking through a staging URL doesn't accidentally
+        // open the production app.
+        putenv('IOS_APPLE_TEAM_ID=STAGING1234');
+        putenv('IOS_BUNDLE_ID=com.americantv.userapp.staging');
+        putenv('ANDROID_PACKAGE_NAME=com.americantv.app.staging');
+
+        try {
+            $apple = $this->get('/.well-known/apple-app-site-association')->json();
+            $this->assertSame(
+                'STAGING1234.com.americantv.userapp.staging',
+                $apple['applinks']['details'][0]['appID'],
+            );
+            $this->assertSame(
+                'STAGING1234.com.americantv.userapp.staging',
+                $apple['webcredentials']['apps'][0],
+            );
+
+            $android = $this->get('/.well-known/assetlinks.json')->json();
+            $this->assertSame(
+                'com.americantv.app.staging',
+                $android[0]['target']['package_name'],
+            );
+        } finally {
+            // Reset so other tests in this file see production defaults.
+            putenv('IOS_APPLE_TEAM_ID');
+            putenv('IOS_BUNDLE_ID');
+            putenv('ANDROID_PACKAGE_NAME');
+        }
+    }
 }
