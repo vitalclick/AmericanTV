@@ -103,6 +103,10 @@ Route::group([], function () {
 
         // Engagement telemetry — batched and best-effort.
         Route::post('analytics/events', 'AnalyticsController@ingest');
+
+        // Per-video watch summary (creator-owner or admin).
+        Route::get('analytics/videos/{videoId}/watch-summary',
+            'AnalyticsController@videoWatchSummary');
     });
 
     // -------------------- Server-to-server webhooks --------------------
