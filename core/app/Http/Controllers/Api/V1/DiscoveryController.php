@@ -8,6 +8,8 @@ use App\Http\Resources\CategoryResource;
 use App\Http\Resources\VideoDetailResource;
 use App\Http\Resources\VideoSummaryResource;
 use App\Models\Category;
+use App\Models\IapProduct;
+use App\Models\Plan;
 use App\Models\Video;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -87,6 +89,41 @@ class DiscoveryController extends Controller
 
         return response()->json([
             'data' => (new VideoDetailResource($video))->toArray($request),
+        ]);
+    }
+
+    public function plan(Request $request, string $slug): JsonResponse
+    {
+        $plan = Plan::where('slug', $slug)
+            ->where('status', Status::ENABLE)
+            ->with('user')
+            ->withCount(['videos', 'playlists'])
+            ->firstOrFail();
+
+        $iap = IapProduct::where('type', 'plan')
+            ->where('plan_id', $plan->id)
+            ->where('active', true)
+            ->first();
+
+        return response()->json([
+            'data' => [
+                'id'             => $plan->id,
+                'slug'           => $plan->slug,
+                'name'           => $plan->name,
+                'price'          => (float) $plan->price,
+                'creator'        => $plan->user ? [
+                    'id'   => $plan->user->id,
+                    'slug' => $plan->user->username,
+                    'name' => trim(($plan->user->firstname ?? '') . ' ' . ($plan->user->lastname ?? '')),
+                ] : null,
+                'video_count'    => (int) ($plan->videos_count ?? 0),
+                'playlist_count' => (int) ($plan->playlists_count ?? 0),
+                'iap' => $iap ? [
+                    'apple_product_id'  => $iap->apple_product_id,
+                    'google_product_id' => $iap->google_product_id,
+                    'mobile_price_usd'  => (float) $iap->price_usd_mobile,
+                ] : null,
+            ],
         ]);
     }
 
