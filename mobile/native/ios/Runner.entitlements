@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Capabilities required for production:
+    - Push notifications: APS environment (production for App Store builds).
+    - Sign in with Apple: required by App Store Review since we offer
+      Google sign-in too.
+    - Associated Domains: for Universal Links — drops users straight into
+      the app when they tap an americantv.vip URL. Configure the
+      apple-app-site-association file at https://americantv.vip/.well-known/
+      apple-app-site-association to enable.
+    - Background processing: lets URLSession background uploads schedule
+      retries via BGTaskScheduler.
+
+  After `flutter create`:
+    cp mobile/native/ios/Runner.entitlements ios/Runner/
+    # then in Xcode: Signing & Capabilities -> + Capability for each one.
+-->
+<plist version="1.0">
+<dict>
+    <key>aps-environment</key>
+    <string>production</string>
+
+    <key>com.apple.developer.applesignin</key>
+    <array>
+        <string>Default</string>
+    </array>
+
+    <key>com.apple.developer.associated-domains</key>
+    <array>
+        <string>applinks:americantv.vip</string>
+        <string>applinks:www.americantv.vip</string>
+    </array>
+
+    <key>com.apple.developer.background-tasks</key>
+    <array>
+        <string>com.americantv.userapp.upload.background</string>
+    </array>
+</dict>
+</plist>
