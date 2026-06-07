@@ -23,6 +23,16 @@ definitions:
     cocoapods: default
 
   base_scripts: &base_scripts
+    - name: Preflight — verify env vars
+      # Sanity-check the env group BEFORE we spend 20 minutes building
+      # only to die at the publish step. WORKFLOW (or CM_WORKFLOW_ID,
+      # which Codemagic sets automatically) gates which vars are
+      # required: TestFlight tolerates a missing Firebase config; App
+      # Store doesn't.
+      script: |
+        chmod +x $CM_BUILD_DIR/mobile/scripts/codemagic-preflight.sh
+        $CM_BUILD_DIR/mobile/scripts/codemagic-preflight.sh
+
     - name: Show Flutter + Dart versions
       script: |
         flutter --version
