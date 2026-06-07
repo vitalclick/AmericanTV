@@ -88,6 +88,34 @@ abstract class TestCase extends BaseTestCase
             'video_sell_charge'    => 0,
             'playlist_sell_charge' => 0,
             'plan_sell_charge'     => 0,
+
+            // Monetization gates (ManageVideoController / AdvertiserController).
+            // 0 / 0 means there's no minimum threshold; tests that probe the
+            // gate flip them via gsOverride().
+            'minimum_subscribe'   => 0,
+            'minimum_views'       => 0,
+            'monetization_amount' => 0,
+            'monetization_status' => 1, // monetization enabled by default.
+            'is_monthly_subscription' => true,
+            'is_playlist_sell'       => true,
+
+            // Module switches admin views check before rendering.
+            'ads_module'        => true,
+            'system_customized' => false,
+            'is_storage'        => false,
+            'available_version' => '',
+
+            // Notification channel toggles. False = channel disabled, so
+            // tests don't accidentally fire emails / SMS to nowhere.
+            'en' => false,   // email notifications.
+            'sn' => false,   // sms notifications.
+            'pn' => false,   // push notifications.
+
+            // External configs the helpers reach for (returned as empty
+            // objects so `gs('mail_config')->host` resolves without warnings).
+            'mail_config'          => (object) [],
+            'firebase_config'      => (object) [],
+            'socialite_credentials' => (object) [],
         ];
 
         Cache::put('GeneralSetting', $defaults);
