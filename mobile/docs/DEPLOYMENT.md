@@ -33,6 +33,10 @@ Before bumping the version:
 - [ ] If new IAP plans were added, `IapProductSeeder` has run on prod.
 - [ ] If new HLS-eligible videos were uploaded, `php artisan
       stream:backfill --limit=N` to migrate the backlog.
+- [ ] App Review demo account is healthy:
+      `php artisan db:seed --class=AppReviewDemoSeeder`.
+      Verifies the account exists, ev/sv/kv flags are set, watch-later
+      has 3 videos, and a complimentary plan subscription is active.
 
 ## Version bump
 

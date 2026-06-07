@@ -173,18 +173,28 @@ padding-safe area as the source.
 
 ## Demo account for App Store Review
 
-Apple requires a working demo account so reviewers can exercise auth
-and IAP without registering. Create one in production:
+Apple and Google reviewers both need a working demo account. The
+account is created and refreshed by `core/database/seeders/AppReviewDemoSeeder.php`:
 
-```
-email: appreview@americantv.vip
-password: <store in 1Password>
+```sh
+# First time, or after each significant deploy:
+cd core
+php artisan db:seed --class=AppReviewDemoSeeder
 ```
 
-Confirm:
-- Account verified (`ev = 1`, `sv = 1`).
-- Has a redeemable plan subscription (sandbox IAP).
-- Has 3+ videos in their watch-later for demo navigability.
+The seeder:
+- Creates / refreshes `appreview@americantv.vip` with email, mobile,
+  and KYC flags pre-verified (no SMS roundtrip required for reviewers).
+- Drops 3 public videos into the user's watch-later list so the
+  Library tab isn't empty.
+- Grants a complimentary 1-year subscription to the first active Plan
+  via `PurchasedPlan` with `trx = 'APP_REVIEW_DEMO'`. Lets reviewers
+  exercise the post-paywall flow without going through IAP.
+
+To pin the password (so 1Password keeps a stable record), set
+`APP_REVIEW_DEMO_PASSWORD` in the production `.env` BEFORE seeding.
+First-time runs without the env var print a randomly-generated
+password to the console — save it to 1Password immediately.
 
 Add credentials to App Store Connect → App Information → App Review
 Information → Sign-In Required → fill in. Same for Play Console →
