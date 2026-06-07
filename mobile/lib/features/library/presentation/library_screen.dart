@@ -8,20 +8,27 @@ import '../../feed/domain/video_summary.dart';
 import '../data/library_repository.dart';
 
 final _watchLaterProvider =
-    FutureProvider.autoDispose<List<VideoSummary>>((ref) async {
-  final page = await ref.read(libraryRepositoryProvider).watchLater();
-  return page.videos;
+    StreamProvider.autoDispose<List<VideoSummary>>((ref) async* {
+  final repo = ref.read(libraryRepositoryProvider);
+  final cached = await repo.cachedWatchLater();
+  if (cached != null) yield cached.videos;
+  yield (await repo.watchLater()).videos;
 });
 
 final _historyProvider =
-    FutureProvider.autoDispose<List<VideoSummary>>((ref) async {
-  final page = await ref.read(libraryRepositoryProvider).history();
-  return page.videos;
+    StreamProvider.autoDispose<List<VideoSummary>>((ref) async* {
+  final repo = ref.read(libraryRepositoryProvider);
+  final cached = await repo.cachedHistory();
+  if (cached != null) yield cached.videos;
+  yield (await repo.history()).videos;
 });
 
 final _purchasedProvider =
-    FutureProvider.autoDispose<PurchasedLibrary>((ref) async {
-  return ref.read(libraryRepositoryProvider).purchased();
+    StreamProvider.autoDispose<PurchasedLibrary>((ref) async* {
+  final repo = ref.read(libraryRepositoryProvider);
+  final cached = await repo.cachedPurchased();
+  if (cached != null) yield cached;
+  yield await repo.purchased();
 });
 
 class LibraryScreen extends ConsumerWidget {
@@ -84,7 +91,7 @@ class _LibraryList extends ConsumerWidget {
     this.trailingAction,
   });
 
-  final AutoDisposeFutureProvider<List<VideoSummary>> provider;
+  final AutoDisposeStreamProvider<List<VideoSummary>> provider;
   final String emptyMessage;
   final Future<void> Function(int videoId) onRemove;
   final Widget? trailingAction;

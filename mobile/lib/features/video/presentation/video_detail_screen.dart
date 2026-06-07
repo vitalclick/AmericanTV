@@ -13,9 +13,16 @@ import '../domain/video_source.dart';
 import 'comments_section.dart';
 import 'video_player_screen.dart';
 
+/// Read-through over the cache. If we've ever fetched this slug before we
+/// emit the cached payload immediately, then race the network. The new
+/// payload supersedes the cached one when it lands; failures keep the
+/// cached version on screen.
 final _videoDetailProvider =
-    FutureProvider.autoDispose.family<VideoDetail, String>((ref, slug) {
-  return ref.read(videoRepositoryProvider).show(slug);
+    StreamProvider.autoDispose.family<VideoDetail, String>((ref, slug) async* {
+  final repo = ref.read(videoRepositoryProvider);
+  final cached = await repo.cachedShow(slug);
+  if (cached != null) yield cached;
+  yield await repo.show(slug);
 });
 
 class VideoDetailScreen extends ConsumerWidget {
