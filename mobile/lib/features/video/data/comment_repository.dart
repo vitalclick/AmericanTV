@@ -17,6 +17,7 @@ class CommentRepository {
 
   String _cacheKey(int videoId) => 'cache:comments:$videoId:page-1';
   static const _pendingCommentsKey = 'cache:comments:pending';
+  static const _droppedOpsKey = 'cache:comments:dropped';
 
   Future<PaginatedComments?> cachedFirstPage(int videoId) async {
     final raw = await _cache.readJson(_cacheKey(videoId));
@@ -147,6 +148,8 @@ class CommentRepository {
     if (ops.isEmpty) return;
 
     final survived = <Map<String, dynamic>>[];
+    final dropped = <Map<String, dynamic>>[];
+
     for (final op in ops) {
       try {
         if (op['kind'] == 'comment') {
@@ -163,16 +166,50 @@ class CommentRepository {
       } on DioException catch (e) {
         if (_isNetwork(e)) {
           survived.add(op);
+        } else {
+          // 4xx during replay — target almost certainly deleted while
+          // offline. Record the drop so the next-launch banner can
+          // surface it; without this the user's comment vanishes
+          // silently.
+          dropped.add({
+            ...op,
+            'status': e.response?.statusCode,
+            'dropped_at': DateTime.now().toIso8601String(),
+          });
         }
-        // 4xx (e.g. video deleted while offline) drops the op.
       }
     }
+
     if (survived.isEmpty) {
       await _cache.remove(_pendingCommentsKey);
     } else {
       await _cache.writeJson(_pendingCommentsKey, {'ops': survived});
     }
+
+    if (dropped.isNotEmpty) {
+      final existing = await _cache.readJson(_droppedOpsKey);
+      final all = ((existing?['ops'] as List?) ?? const [])
+          .cast<Map<String, dynamic>>()
+          .toList()
+        ..addAll(dropped);
+      // Cap at 20 so a user offline for weeks doesn't return to an
+      // unscrollable banner. FIFO eviction.
+      while (all.length > 20) {
+        all.removeAt(0);
+      }
+      await _cache.writeJson(_droppedOpsKey, {'ops': all});
+    }
   }
+
+  /// Surfaces ops that the server rejected during replay. The banner reads
+  /// these on launch and clears them via acknowledgeDroppedOps.
+  Future<List<DroppedComment>> droppedOps() async {
+    final raw = await _cache.readJson(_droppedOpsKey);
+    final ops = ((raw?['ops'] as List?) ?? const []).cast<Map<String, dynamic>>();
+    return ops.map(DroppedComment.fromJson).toList();
+  }
+
+  Future<void> acknowledgeDroppedOps() => _cache.remove(_droppedOpsKey);
 
   Future<CommentReactionState> reactToComment({required int commentId, required int isLike}) async {
     try {
@@ -185,6 +222,36 @@ class CommentRepository {
       throw ApiException.fromDio(e);
     }
   }
+}
+
+class DroppedComment {
+  const DroppedComment({
+    required this.kind,
+    required this.body,
+    required this.droppedAt,
+    this.videoId,
+    this.parentId,
+    this.status,
+  });
+
+  factory DroppedComment.fromJson(Map<String, dynamic> json) {
+    return DroppedComment(
+      kind: json['kind'] as String,
+      body: json['body'] as String? ?? '',
+      videoId: json['video_id'] as int?,
+      parentId: json['parent_id'] as int?,
+      status: json['status'] as int?,
+      droppedAt: DateTime.tryParse(json['dropped_at'] as String? ?? '') ??
+          DateTime.now(),
+    );
+  }
+
+  final String kind;
+  final String body;
+  final int? videoId;
+  final int? parentId;
+  final int? status;
+  final DateTime droppedAt;
 }
 
 class CommentReactionState {
