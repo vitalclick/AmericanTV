@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  mobile:
+    if: |
+      contains(github.event.pull_request.changed_files || '', 'mobile/') ||
+      github.event_name == 'push'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.24.x'
+          cache: true
+
+      - name: Materialize platform projects
+        # Lets `flutter analyze` resolve plugin platform code. We don't keep
+        # android/ios in version control — see mobile/README.md.
+        run: flutter create . --org com.americantv --project-name americantv --platforms ios,android --no-overwrite
+
+      - name: Stub .env so dotenv asset loads
+        run: cp .env.example .env
+
+      - run: flutter pub get
+
+      - name: Run codegen (freezed / json_serializable)
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - run: flutter analyze --no-fatal-infos
+
+      - run: flutter test
+
+  laravel:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: core
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, intl, gd, sqlite3, bcmath, exif, ffmpeg
+          coverage: none
+
+      - name: Cache composer
+        uses: actions/cache@v4
+        with:
+          path: ~/.composer/cache
+          key: composer-${{ hashFiles('core/composer.lock') }}
+
+      - run: composer install --no-interaction --no-progress --prefer-dist
+
+      - name: Run phpunit
+        run: vendor/bin/phpunit --testsuite=Unit,Feature

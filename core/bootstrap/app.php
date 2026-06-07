@@ -23,7 +23,7 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
         using:function(){
             Route::namespace('App\Http\Controllers')->middleware([VugiChugi::mdNm()])->group(function(){
-        
+
                 Route::middleware(['web'])
                     ->namespace('Admin')
                     ->prefix('admin')
@@ -37,6 +37,13 @@ return Application::configure(basePath: dirname(__DIR__))
                     ->group(base_path('routes/ipn.php'));
 
                 Route::middleware(['web','maintenance'])->prefix('user')->group(base_path('routes/user.php'));
+
+                Route::middleware(['api','maintenance'])
+                    ->prefix('api/v1')
+                    ->namespace('Api\V1')
+                    ->name('api.v1.')
+                    ->group(base_path('routes/api.php'));
+
                 Route::middleware(['web','maintenance'])->group(base_path('routes/web.php'));
 
             });
@@ -51,6 +58,13 @@ return Application::configure(basePath: dirname(__DIR__))
             \Illuminate\Routing\Middleware\SubstituteBindings::class,
             \App\Http\Middleware\LanguageMiddleware::class,
             \App\Http\Middleware\ActiveTemplateMiddleware::class,
+        ]);
+
+        $middleware->group('api', [
+            \Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful::class,
+            \Illuminate\Routing\Middleware\ThrottleRequests::class.':api',
+            \Illuminate\Routing\Middleware\SubstituteBindings::class,
+            \App\Http\Middleware\LanguageMiddleware::class,
         ]);
 
         $middleware->alias([
@@ -76,7 +90,7 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
 
         $middleware->validateCsrfTokens(
-            except: ['user/deposit','ipn*']
+            except: ['user/deposit','ipn*','api/*']
         );
     })
     ->withExceptions(function (Exceptions $exceptions) {
