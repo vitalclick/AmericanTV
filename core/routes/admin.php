@@ -126,6 +126,10 @@ Route::middleware('admin')->group(function () {
             Route::get('stock/{user_id?}', 'stock')->name('stock');
             Route::get('free/{user_id?}', 'free')->name('free');
 
+            // Mobile-app watch-duration analytics. Renders into the admin
+            // video detail screen via @include('admin.partials.watch_summary').
+            Route::get('{id}/watch-summary', 'watchSummary')->name('watch.summary');
+
             Route::get('public/{user_id?}', 'public')->name('public');
             Route::get('private/{user_id?}', 'private')->name('private');
 
