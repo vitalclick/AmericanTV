@@ -50,6 +50,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
+    # Scopes secrets to the "production" environment rather than the
+    # repo-wide bucket, so the cPanel credentials sit alongside any
+    # other prod-only config and can have protection rules (required
+    # reviewers, branch restrictions) layered on independently.
+    environment:
+      name: production
+      url: https://americantv.vip
+
     env:
       # Required secrets (set in repo Settings → Secrets and variables → Actions):
       #   CPANEL_HOST                e.g. s4217.fra1.stableserver.net
