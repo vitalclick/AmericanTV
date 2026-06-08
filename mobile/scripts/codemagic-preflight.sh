@@ -1,108 +1,65 @@
 #!/usr/bin/env bash
 #
-# Verifies every env var the Codemagic workflows depend on is set before
-# the build burns 20 minutes only to die at the publish step.
+# Runs as the first script in each Codemagic workflow. The set of env
+# vars the build genuinely cannot proceed without has shrunk to zero —
+# every remaining variable in the americantv-prod env group is a
+# runtime feature toggle, not a build prerequisite. So preflight is now
+# advisory: it logs which optional features are configured and which
+# will degrade gracefully at runtime, then always exits 0.
 #
-# Runs as the first script in each Codemagic workflow. Required vars
-# differ per workflow; the WORKFLOW env var (set by Codemagic) gates
-# which set we check.
-#
-# Exits non-zero with a tabulated diagnosis if anything's missing.
-# Codemagic surfaces stderr in the build log, so the operator sees
-# exactly which env vars to populate.
+# Add back to REQUIRED + a hard-fail block if any future variable
+# actually blocks the build.
 
 set -uo pipefail
 
-# ----- required vars per workflow ----------------------------------------
-# Several variables that used to live here moved out as the config matured:
+# ----- optional vars per workflow ----------------------------------------
+# Variables that previously lived here moved out as config matured:
 #   API_BASE_URL              -> hardcoded inline in codemagic.yaml
 #   BUILD_VERSION             -> read from mobile/pubspec.yaml
 #   RELEASE_NOTIFY_EMAIL      -> hardcoded inline in email.recipients
 #   APP_ICON_*                -> masters committed at mobile/assets/icon/
 #   FIREBASE_GOOGLE_*         -> committed at the canonical Flutter paths
 #   ANDROID_RELEASE_SHA256    -> Laravel-side env var, not Codemagic
-# What's left below is the set we still genuinely need pasted into
-# the Codemagic env group.
+#   GCLOUD_SERVICE_ACCOUNT_*  -> AAB is artifact-only; manual upload now
+# What's left is purely runtime-feature gates.
 
-COMMON_VARS=()
-
-IOS_VARS=(
-  REVENUECAT_IOS_KEY
+IOS_OPTIONAL=(
+  REVENUECAT_IOS_KEY:"iOS in-app purchases via RevenueCat"
 )
 
-ANDROID_VARS=(
-  REVENUECAT_ANDROID_KEY
-  GOOGLE_OAUTH_CLIENT_ID_ANDROID
+ANDROID_OPTIONAL=(
+  REVENUECAT_ANDROID_KEY:"Android in-app purchases via RevenueCat"
+  GOOGLE_OAUTH_CLIENT_ID_ANDROID:"native Sign in with Google"
 )
 
-# Production-only sets are empty for now — Firebase configs come from
-# the repo, and the Google Play credential check above already covers
-# the Android production upload. The arrays stay declared so the case
-# block below stays uniform.
-IOS_PROD_VARS=()
-
-ANDROID_PROD_VARS=()
-
-# ----- workflow detection ------------------------------------------------
 WORKFLOW="${CM_WORKFLOW_ID:-${WORKFLOW:-unknown}}"
 
-declare -a REQUIRED=()
-REQUIRED+=("${COMMON_VARS[@]}")
-
+declare -a CHECK=()
 case "$WORKFLOW" in
-  ios-testflight)
-    REQUIRED+=("${IOS_VARS[@]}")
-    ;;
-  ios-app-store)
-    REQUIRED+=("${IOS_VARS[@]}" "${IOS_PROD_VARS[@]}")
-    ;;
-  android-internal)
-    REQUIRED+=("${ANDROID_VARS[@]}")
-    ;;
-  android-production)
-    REQUIRED+=("${ANDROID_VARS[@]}" "${ANDROID_PROD_VARS[@]}")
-    ;;
-  *)
-    echo "[preflight] WORKFLOW='$WORKFLOW' — running with common-vars only."
-    ;;
+  ios-testflight|ios-app-store) CHECK+=("${IOS_OPTIONAL[@]}") ;;
+  android-internal|android-production) CHECK+=("${ANDROID_OPTIONAL[@]}") ;;
 esac
 
-# ----- verification ------------------------------------------------------
-declare -a MISSING=()
-for VAR in "${REQUIRED[@]}"; do
+declare -a INACTIVE=()
+declare -a ACTIVE=()
+for entry in "${CHECK[@]}"; do
+  VAR="${entry%%:*}"
+  DESC="${entry#*:}"
   if [ -z "${!VAR-}" ]; then
-    MISSING+=("$VAR")
+    INACTIVE+=("$VAR ($DESC)")
+  else
+    ACTIVE+=("$VAR ($DESC)")
   fi
 done
 
-if [ "${#MISSING[@]}" -gt 0 ]; then
-  cat >&2 <<EOF
-
-╔════════════════════════════════════════════════════════════════════╗
-║  PREFLIGHT FAILED                                                  ║
-╠════════════════════════════════════════════════════════════════════╣
-║  workflow: $WORKFLOW
-║  missing:
-EOF
-  for VAR in "${MISSING[@]}"; do
-    echo "║    - $VAR" >&2
-  done
-  cat >&2 <<EOF
-╚════════════════════════════════════════════════════════════════════╝
-
-Populate each missing variable in the Codemagic env group
-americantv-prod, then re-run the build. See
-mobile/docs/CODEMAGIC_SETUP.md for the env-var matrix.
-
-EOF
-  exit 1
+echo "[preflight] workflow=$WORKFLOW"
+if [ "${#ACTIVE[@]}" -gt 0 ]; then
+  echo "[preflight] features active:"
+  for line in "${ACTIVE[@]}"; do echo "[preflight]   ✓ $line"; done
+fi
+if [ "${#INACTIVE[@]}" -gt 0 ]; then
+  echo "[preflight] features inactive (env var unset — feature degrades silently at runtime):"
+  for line in "${INACTIVE[@]}"; do echo "[preflight]   ✗ $line"; done
 fi
 
-# ----- shape checks ------------------------------------------------------
-# API_BASE_URL is now hardcoded in codemagic.yaml's .env-write step;
-# BUILD_VERSION comes from pubspec.yaml; ANDROID_RELEASE_SHA256 lives
-# on the Laravel host. None of the historical shape-checks for those
-# apply here anymore. Add new checks above this line as future
-# env vars get introduced.
-
-echo "[preflight] ✓ all required env vars set for workflow=$WORKFLOW"
+exit 0
