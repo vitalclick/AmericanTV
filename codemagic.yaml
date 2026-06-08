@@ -22,8 +22,13 @@ definitions:
     xcode: latest
     cocoapods: default
 
-  base_scripts: &base_scripts
-    - name: Preflight — verify env vars
+  # Shared scripts. YAML aliases can't be flattened into an outer
+  # sequence (`- *list_alias` becomes one nested element, not N spread
+  # items), so each script gets its own anchor and workflows reference
+  # them one-by-one below.
+  scripts:
+    - &s_preflight
+      name: Preflight — verify env vars
       # Sanity-check the env group BEFORE we spend 20 minutes building
       # only to die at the publish step. WORKFLOW (or CM_WORKFLOW_ID,
       # which Codemagic sets automatically) gates which vars are
@@ -33,12 +38,14 @@ definitions:
         chmod +x $CM_BUILD_DIR/mobile/scripts/codemagic-preflight.sh
         $CM_BUILD_DIR/mobile/scripts/codemagic-preflight.sh
 
-    - name: Show Flutter + Dart versions
+    - &s_versions
+      name: Show Flutter + Dart versions
       script: |
         flutter --version
         dart --version
 
-    - name: Ensure platform projects exist
+    - &s_create_platforms
+      name: Ensure platform projects exist
       # The android/ and ios/ directories ARE in version control from
       # 3.0.0+14 onward, so this is a safety net for fresh clones or
       # platform additions. --no-overwrite means existing files are
@@ -51,7 +58,8 @@ definitions:
           --platforms ios,android \
           --no-overwrite
 
-    - name: Layer native shims into the generated projects
+    - &s_native_shims
+      name: Layer native shims into the generated projects
       # Explicit assertions in both directions: the shim source must be
       # present in the repo, AND the target platform project must have
       # been materialized by `flutter create` above. Either missing is
@@ -91,7 +99,8 @@ definitions:
           fi
         fi
 
-    - name: Copy iOS privacy manifest + entitlements
+    - &s_ios_privacy
+      name: Copy iOS privacy manifest + entitlements
       script: |
         cd $CM_BUILD_DIR/mobile
         if [ -d ios/Runner ]; then
@@ -99,7 +108,8 @@ definitions:
           cp native/ios/Runner.entitlements ios/Runner/
         fi
 
-    - name: Patch Info.plist
+    - &s_ios_plist
+      name: Patch Info.plist
       # Apple rejects builds that touch privacy-sensitive APIs without
       # NSCameraUsageDescription / NSPhotoLibraryUsageDescription / etc.
       # Also locks ATS to HTTPS-only and adds background-modes for
@@ -142,7 +152,8 @@ definitions:
         $PB -c "Delete :ITSAppUsesNonExemptEncryption" $P || true
         $PB -c "Add :ITSAppUsesNonExemptEncryption bool false" $P
 
-    - name: Copy Android proguard rules + network security config
+    - &s_android_proguard
+      name: Copy Android proguard rules + network security config
       script: |
         cd $CM_BUILD_DIR/mobile
         if [ -d android/app ]; then
@@ -152,7 +163,8 @@ definitions:
              android/app/src/main/res/xml/
         fi
 
-    - name: Wire Android release shrinking + network security config
+    - &s_android_release
+      name: Wire Android release shrinking + network security config
       # As of 3.0.0+14 the committed build.gradle + AndroidManifest.xml
       # already carry the proguard + networkSecurityConfig wiring (see
       # commit 87204c9). This step is now a backstop: it inserts the
@@ -187,7 +199,8 @@ definitions:
           echo "[android-signing] named 'americantv-keystore'." >&2
         fi
 
-    - name: Drop launcher icon sources
+    - &s_icon_sources
+      name: Drop launcher icon sources
       # The PNG sources are kept in the Codemagic env group as base64
       # blobs so the binary doesn't bloat the git history. Decode into
       # place; flutter_launcher_icons reads them on the next step.
@@ -201,7 +214,8 @@ definitions:
           echo "$APP_ICON_ADAPTIVE_FG_PNG_B64" | base64 -d > assets/icon/app-icon-adaptive-foreground.png
         fi
 
-    - name: Generate launcher icons
+    - &s_icon_generate
+      name: Generate launcher icons
       # ALLOW_DEFAULT_ICON gates the fallback:
       #   - unset / "false": missing icon source FAILS the build. Used by
       #     production workflows so we never accidentally ship the
@@ -235,7 +249,8 @@ definitions:
           exit 1
         fi
 
-    - name: Rewrite platform identifiers
+    - &s_ids_rewrite
+      name: Rewrite platform identifiers
       # flutter create with --org com.americantv would produce
       # com.americantv.americantv on both platforms. We need:
       #   Android applicationId/namespace: com.americantv.app
@@ -281,17 +296,20 @@ definitions:
           echo "[ids] PRODUCT_BUNDLE_IDENTIFIER set in $MATCHES build configurations."
         fi
 
-    - name: Resolve dependencies
+    - &s_pub_get
+      name: Resolve dependencies
       script: |
         cd $CM_BUILD_DIR/mobile
         flutter pub get
 
-    - name: Run codegen
+    - &s_codegen
+      name: Run codegen
       script: |
         cd $CM_BUILD_DIR/mobile
         dart run build_runner build --delete-conflicting-outputs
 
-    - name: Analyze + test
+    - &s_analyze_test
+      name: Analyze + test
       script: |
         cd $CM_BUILD_DIR/mobile
         flutter analyze --no-fatal-infos
@@ -331,7 +349,20 @@ workflows:
         - $CM_BUILD_DIR/mobile/.dart_tool
 
     scripts:
-      - *base_scripts
+      - *s_preflight
+      - *s_versions
+      - *s_create_platforms
+      - *s_native_shims
+      - *s_ios_privacy
+      - *s_ios_plist
+      - *s_android_proguard
+      - *s_android_release
+      - *s_icon_sources
+      - *s_icon_generate
+      - *s_ids_rewrite
+      - *s_pub_get
+      - *s_codegen
+      - *s_analyze_test
 
       - name: Write .env from group variables
         script: |
@@ -454,7 +485,20 @@ workflows:
       app_store_connect: americantv-app-store
 
     scripts:
-      - *base_scripts
+      - *s_preflight
+      - *s_versions
+      - *s_create_platforms
+      - *s_native_shims
+      - *s_ios_privacy
+      - *s_ios_plist
+      - *s_android_proguard
+      - *s_android_release
+      - *s_icon_sources
+      - *s_icon_generate
+      - *s_ids_rewrite
+      - *s_pub_get
+      - *s_codegen
+      - *s_analyze_test
       - name: Write .env from group variables
         script: |
           cd $CM_BUILD_DIR/mobile
@@ -552,7 +596,20 @@ workflows:
         - $CM_BUILD_DIR/mobile/.dart_tool
 
     scripts:
-      - *base_scripts
+      - *s_preflight
+      - *s_versions
+      - *s_create_platforms
+      - *s_native_shims
+      - *s_ios_privacy
+      - *s_ios_plist
+      - *s_android_proguard
+      - *s_android_release
+      - *s_icon_sources
+      - *s_icon_generate
+      - *s_ids_rewrite
+      - *s_pub_get
+      - *s_codegen
+      - *s_analyze_test
 
       - name: Write .env from group variables
         script: |
@@ -622,7 +679,20 @@ workflows:
         # Production builds must ship the brand icon; missing icon fails.
 
     scripts:
-      - *base_scripts
+      - *s_preflight
+      - *s_versions
+      - *s_create_platforms
+      - *s_native_shims
+      - *s_ios_privacy
+      - *s_ios_plist
+      - *s_android_proguard
+      - *s_android_release
+      - *s_icon_sources
+      - *s_icon_generate
+      - *s_ids_rewrite
+      - *s_pub_get
+      - *s_codegen
+      - *s_analyze_test
       - name: Write .env from group variables
         script: |
           cd $CM_BUILD_DIR/mobile
