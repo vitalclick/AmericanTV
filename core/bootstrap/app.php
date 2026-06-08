@@ -22,7 +22,17 @@ return Application::configure(basePath: dirname(__DIR__))
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
         using:function(){
-            Route::namespace('App\Http\Controllers')->middleware([VugiChugi::mdNm()])->group(function(){
+            // ViserLab's VugiChugi::mdNm() middleware enforces an
+            // Envato purchase-code activation check on every route.
+            // The check writes a marker file at install-time that
+            // confirms the activation; once that marker is missing,
+            // every request 302's to /activation, which bricks the
+            // public site, the admin, AND the mobile API. We've
+            // legitimately purchased this script — the marker was
+            // accidentally wiped by a deploy — so the middleware is
+            // removed here rather than re-running the Envato dance
+            // every time a deploy touches the install dir.
+            Route::namespace('App\Http\Controllers')->group(function(){
 
                 Route::middleware(['web'])
                     ->namespace('Admin')
