@@ -1,6 +1,6 @@
 # Codemagic setup — first-time configuration
 
-Step-by-step for getting `mobile/codemagic.yaml` to run successfully against
+Step-by-step for getting `codemagic.yaml` (at repo root) to run successfully against
 production stores. Do these once; then the four workflows run unattended.
 
 ## Current state (3.0.0+14)
@@ -50,8 +50,13 @@ Tick each item before triggering the first TestFlight / Internal build:
 1. Create / sign in to Codemagic.io.
 2. **Apps → Add application → GitHub** → pick the `vitalclick/americantv`
    repo.
-3. Codemagic auto-detects `mobile/codemagic.yaml` and surfaces the four
-   workflows in the UI.
+3. Codemagic auto-detects `codemagic.yaml` (at the repo root) and surfaces
+   the four workflows in the UI. The file must live at the root —
+   Codemagic doesn't expose a custom-path setting on the standard plan,
+   so we keep it there even though the rest of the Flutter project lives
+   under `mobile/`. The workflow scripts use `$CM_BUILD_DIR/mobile/...`
+   for everything build-related, so file location and project location
+   are decoupled.
 
 ## 2. App Store Connect integration
 

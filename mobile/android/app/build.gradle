@@ -34,7 +34,7 @@ android {
         release {
             // Signing config gets injected by Codemagic via `android_signing`
             // referencing the `americantv-keystore` upload — see
-            // mobile/codemagic.yaml. Falls back to debug for local
+            // codemagic.yaml at repo root. Falls back to debug for local
             // `flutter run --release` so contributors don't need the
             // production keystore on their laptops.
             signingConfig = signingConfigs.debug

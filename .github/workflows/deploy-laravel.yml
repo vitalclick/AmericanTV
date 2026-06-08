@@ -239,9 +239,19 @@ jobs:
           # Probe the public root endpoint (added in commit ccf3eee).
           # 5-second cache warmup before probing; the route:cache step
           # above invalidated everything.
+          #
+          # Headers matter here — the site sits behind LiteSpeed +
+          # Cloudflare and the edge WAF returns 415 Unsupported Media
+          # Type on a bare curl with no Accept header. Sending
+          # Accept: application/json and a recognisable User-Agent
+          # makes the request look like a normal API client and gets
+          # through to Laravel.
           sleep 5
           for attempt in 1 2 3; do
-            STATUS=$(curl -s -o /tmp/body -w "%{http_code}" https://americantv.vip/api/v1 || echo 000)
+            STATUS=$(curl -s -o /tmp/body -w "%{http_code}" \
+              -H "Accept: application/json" \
+              -H "User-Agent: GitHub-Actions-AmericanTV-Deploy/1.0" \
+              https://americantv.vip/api/v1 || echo 000)
             if [ "$STATUS" = "200" ]; then
               echo "✓ /api/v1 healthy (HTTP $STATUS)"
               head -c 200 /tmp/body && echo
