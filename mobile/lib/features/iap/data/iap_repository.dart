@@ -36,16 +36,21 @@ class IapRepository {
     }
 
     // Step 1 — present the platform purchase sheet via RevenueCat.
+    //
+    // purchases_flutter 8.x returns CustomerInfo directly from
+    // purchaseStoreProduct (no wrapper with storeTransaction). The
+    // RevenueCat webhook is what actually validates the purchase on
+    // the Laravel side, so for the inline verify call we just need
+    // *some* identifier to correlate the row — originalAppUserId
+    // (the RC user) gets the server to the right account, the
+    // product_id pins down which entitlement.
     final CustomerInfo info;
-    final StoreTransaction tx;
     try {
       final products = await Purchases.getProducts([productId]);
       if (products.isEmpty) {
         throw const ApiException(message: 'Product not configured on the store.');
       }
-      final result = await Purchases.purchaseStoreProduct(products.first);
-      info = result.customerInfo;
-      tx = result.storeTransaction;
+      info = await Purchases.purchaseStoreProduct(products.first);
     } on PlatformException catch (e) {
       final code = PurchasesErrorHelper.getErrorCode(e);
       if (code == PurchasesErrorCode.purchaseCancelledError) {
@@ -62,8 +67,8 @@ class IapRepository {
         data: {
           'platform': Platform.isIOS ? 'apple' : 'google',
           'product_id': productId,
-          'transaction_id': tx.transactionIdentifier,
-          'receipt': tx.transactionIdentifier, // RevenueCat hides the raw receipt; the server resolves via the transaction id + originalTransactionId webhook.
+          'transaction_id': info.originalAppUserId,
+          'receipt': info.originalAppUserId, // RevenueCat hides the raw receipt; the server resolves via the webhook + product_id correlation.
           'is_subscription': true,
         },
       );
