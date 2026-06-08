@@ -1,135 +1,65 @@
 #!/usr/bin/env bash
 #
-# Verifies every env var the Codemagic workflows depend on is set before
-# the build burns 20 minutes only to die at the publish step.
+# Runs as the first script in each Codemagic workflow. The set of env
+# vars the build genuinely cannot proceed without has shrunk to zero —
+# every remaining variable in the americantv-prod env group is a
+# runtime feature toggle, not a build prerequisite. So preflight is now
+# advisory: it logs which optional features are configured and which
+# will degrade gracefully at runtime, then always exits 0.
 #
-# Runs as the first script in each Codemagic workflow. Required vars
-# differ per workflow; the WORKFLOW env var (set by Codemagic) gates
-# which set we check.
-#
-# Exits non-zero with a tabulated diagnosis if anything's missing.
-# Codemagic surfaces stderr in the build log, so the operator sees
-# exactly which env vars to populate.
+# Add back to REQUIRED + a hard-fail block if any future variable
+# actually blocks the build.
 
 set -uo pipefail
 
-# ----- required vars per workflow ----------------------------------------
-COMMON_VARS=(
-  API_BASE_URL
-  BUILD_VERSION
-  RELEASE_NOTIFY_EMAIL
+# ----- optional vars per workflow ----------------------------------------
+# Variables that previously lived here moved out as config matured:
+#   API_BASE_URL              -> hardcoded inline in codemagic.yaml
+#   BUILD_VERSION             -> read from mobile/pubspec.yaml
+#   RELEASE_NOTIFY_EMAIL      -> hardcoded inline in email.recipients
+#   APP_ICON_*                -> masters committed at mobile/assets/icon/
+#   FIREBASE_GOOGLE_*         -> committed at the canonical Flutter paths
+#   ANDROID_RELEASE_SHA256    -> Laravel-side env var, not Codemagic
+#   GCLOUD_SERVICE_ACCOUNT_*  -> AAB is artifact-only; manual upload now
+# What's left is purely runtime-feature gates.
+
+IOS_OPTIONAL=(
+  REVENUECAT_IOS_KEY:"iOS in-app purchases via RevenueCat"
 )
 
-IOS_VARS=(
-  REVENUECAT_IOS_KEY
+ANDROID_OPTIONAL=(
+  REVENUECAT_ANDROID_KEY:"Android in-app purchases via RevenueCat"
+  GOOGLE_OAUTH_CLIENT_ID_ANDROID:"native Sign in with Google"
 )
 
-ANDROID_VARS=(
-  REVENUECAT_ANDROID_KEY
-  GOOGLE_OAUTH_CLIENT_ID_ANDROID
-)
-
-# Production-only: Firebase + Android key fingerprint.
-# Note: APP_ICON_PNG_B64 / APP_ICON_ADAPTIVE_FG_PNG_B64 used to be
-# required, but since 3.0.0+14 the icon masters are committed under
-# mobile/assets/icon/. The env vars still work — if set, they
-# override the committed icons (useful for last-minute brand swaps
-# without a code change). Just no longer mandatory.
-IOS_PROD_VARS=(
-  FIREBASE_GOOGLE_SERVICE_INFO_PLIST
-)
-
-ANDROID_PROD_VARS=(
-  FIREBASE_GOOGLE_SERVICES_JSON
-  ANDROID_RELEASE_SHA256
-)
-
-# ----- workflow detection ------------------------------------------------
 WORKFLOW="${CM_WORKFLOW_ID:-${WORKFLOW:-unknown}}"
 
-declare -a REQUIRED=()
-REQUIRED+=("${COMMON_VARS[@]}")
-
+declare -a CHECK=()
 case "$WORKFLOW" in
-  ios-testflight)
-    REQUIRED+=("${IOS_VARS[@]}")
-    ;;
-  ios-app-store)
-    REQUIRED+=("${IOS_VARS[@]}" "${IOS_PROD_VARS[@]}")
-    ;;
-  android-internal)
-    REQUIRED+=("${ANDROID_VARS[@]}")
-    ;;
-  android-production)
-    REQUIRED+=("${ANDROID_VARS[@]}" "${ANDROID_PROD_VARS[@]}")
-    ;;
-  *)
-    echo "[preflight] WORKFLOW='$WORKFLOW' — running with common-vars only."
-    ;;
+  ios-testflight|ios-app-store) CHECK+=("${IOS_OPTIONAL[@]}") ;;
+  android-internal|android-production) CHECK+=("${ANDROID_OPTIONAL[@]}") ;;
 esac
 
-# ----- verification ------------------------------------------------------
-declare -a MISSING=()
-for VAR in "${REQUIRED[@]}"; do
+declare -a INACTIVE=()
+declare -a ACTIVE=()
+for entry in "${CHECK[@]}"; do
+  VAR="${entry%%:*}"
+  DESC="${entry#*:}"
   if [ -z "${!VAR-}" ]; then
-    MISSING+=("$VAR")
+    INACTIVE+=("$VAR ($DESC)")
+  else
+    ACTIVE+=("$VAR ($DESC)")
   fi
 done
 
-if [ "${#MISSING[@]}" -gt 0 ]; then
-  cat >&2 <<EOF
-
-╔════════════════════════════════════════════════════════════════════╗
-║  PREFLIGHT FAILED                                                  ║
-╠════════════════════════════════════════════════════════════════════╣
-║  workflow: $WORKFLOW
-║  missing:
-EOF
-  for VAR in "${MISSING[@]}"; do
-    echo "║    - $VAR" >&2
-  done
-  cat >&2 <<EOF
-╚════════════════════════════════════════════════════════════════════╝
-
-Populate each missing variable in the Codemagic env group
-americantv-prod, then re-run the build. See
-mobile/docs/CODEMAGIC_SETUP.md for the env-var matrix.
-
-EOF
-  exit 1
+echo "[preflight] workflow=$WORKFLOW"
+if [ "${#ACTIVE[@]}" -gt 0 ]; then
+  echo "[preflight] features active:"
+  for line in "${ACTIVE[@]}"; do echo "[preflight]   ✓ $line"; done
+fi
+if [ "${#INACTIVE[@]}" -gt 0 ]; then
+  echo "[preflight] features inactive (env var unset — feature degrades silently at runtime):"
+  for line in "${INACTIVE[@]}"; do echo "[preflight]   ✗ $line"; done
 fi
 
-# ----- shape checks ------------------------------------------------------
-# API_BASE_URL must be HTTPS on ALL workflows. iOS App Transport Security
-# blocks cleartext at runtime regardless of whether the build is going to
-# TestFlight or the App Store — a TestFlight install with a cleartext
-# API URL would build successfully and then fail every API call.
-if [[ "$API_BASE_URL" != https://* ]]; then
-  echo "[preflight] FATAL: API_BASE_URL='$API_BASE_URL' is not HTTPS." >&2
-  echo "[preflight] iOS ATS blocks cleartext API calls at runtime even on" >&2
-  echo "[preflight] TestFlight builds. Use https://… in the env group." >&2
-  exit 1
-fi
-
-# BUILD_VERSION must be a valid SemVer (X.Y.Z, optionally with -prerelease)
-# or App Store Connect / Play Console reject the upload at step 22 — but
-# we've already burned 20 minutes of build time by then. Catch typos
-# like 1.0.O (capital O) or 1.0 (missing patch) here.
-if ! [[ "$BUILD_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
-  echo "[preflight] FATAL: BUILD_VERSION='$BUILD_VERSION' is not valid SemVer." >&2
-  echo "[preflight] Expected MAJOR.MINOR.PATCH (e.g. 1.2.3), optionally with" >&2
-  echo "[preflight] a -prerelease suffix (e.g. 1.2.3-beta.1)." >&2
-  exit 1
-fi
-
-# ANDROID_RELEASE_SHA256 must look like a real fingerprint, not the
-# default placeholder.
-if [[ "$WORKFLOW" == "android-production" ]]; then
-  if [[ "$ANDROID_RELEASE_SHA256" == "REPLACE_WITH_KEYSTORE_SHA256_FINGERPRINT" ]]; then
-    echo "[preflight] FATAL: ANDROID_RELEASE_SHA256 still holds the placeholder." >&2
-    echo "[preflight] App Links verification will fail. See CODEMAGIC_SETUP.md." >&2
-    exit 1
-  fi
-fi
-
-echo "[preflight] ✓ all required env vars set for workflow=$WORKFLOW"
+exit 0

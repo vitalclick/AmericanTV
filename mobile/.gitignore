@@ -53,11 +53,14 @@ ios/build/
 
 # Env + secrets
 .env
-google-services.json
-GoogleService-Info.plist
-**/google-services.json
-**/GoogleService-Info.plist
-ios/Runner/GoogleService-Info.plist
+
+# Firebase config files are committed (private repo) to keep Codemagic
+# env-group footprint small. The Google-recommended .gitignore lists
+# them, but for a single-environment app in a private repo, the
+# convenience of "drop the file in once and never touch it again"
+# outweighs the rotation flexibility env-vars give. If you ever
+# flip this repo public, restore the entries and move both files
+# back to Codemagic env vars (base64-encoded) instead.
 
 # Android signing materials. NEVER commit these — they get uploaded to
 # Codemagic's encrypted code-signing storage. Losing them means the

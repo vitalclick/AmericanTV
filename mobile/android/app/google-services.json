@@ -1,0 +1,56 @@
+{
+  "project_info": {
+    "project_number": "92747944753",
+    "firebase_url": "https://americantv-a874c-default-rtdb.firebaseio.com",
+    "project_id": "americantv-a874c",
+    "storage_bucket": "americantv-a874c.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:92747944753:android:bd667d91a772bc22241610",
+        "android_client_info": {
+          "package_name": "com.americantv.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "92747944753-8o5rufp9uu9hecc9jfi09rs9tk7s036c.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.americantv.app",
+            "certificate_hash": "19ad0f59527e3b49f02dea8339c39f33978a96c8"
+          }
+        },
+        {
+          "client_id": "92747944753-ata27c3drksf17ga6a38qeupnc8sbmuu.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDvFZtpHsWdraxAAPJ1eLpYa9hu9H64nNs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "92747944753-ata27c3drksf17ga6a38qeupnc8sbmuu.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "92747944753-4qqhnk8h9jj0fg39r3fetpr2l43ibgkq.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.americantv.app",
+                "app_store_id": "6743315031"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

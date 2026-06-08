@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Response;
+use Illuminate\Http\JsonResponse;
 
 /**
  * Serves the .well-known files that drive iOS Universal Links and Android
@@ -29,7 +29,7 @@ class WellKnownController extends Controller
      * Team ID + bundle ID come from env so staging environments can serve
      * their own AASA (different Team / bundle) without a code change.
      */
-    public function appleAppSiteAssociation(): Response
+    public function appleAppSiteAssociation(): JsonResponse
     {
         $appId = $this->iosAppId();
 
@@ -76,15 +76,12 @@ class WellKnownController extends Controller
      * rotation doesn't require a code deploy. Package name comes from
      * IOS / ANDROID_PACKAGE_NAME env so staging can ship its own.
      */
-    public function androidAssetLinks(): Response
+    public function androidAssetLinks(): JsonResponse
     {
-        $fingerprint = (string) env(
-            'ANDROID_RELEASE_SHA256',
-            // The placeholder is intentional — without a real fingerprint
-            // App Links won't verify, and we'd rather see a verification
-            // failure than ship the wrong cert. Replace via .env.
-            'REPLACE_WITH_KEYSTORE_SHA256_FINGERPRINT',
-        );
+        // Read via config() rather than env() directly — env() returns
+        // null in controllers once config:cache has run. config/well_known.php
+        // calls env() at config-load time, where the cache layer expects it.
+        $fingerprint = (string) config('well_known.android_release_sha256');
 
         $payload = [
             [
@@ -110,14 +107,14 @@ class WellKnownController extends Controller
      */
     private function iosAppId(): string
     {
-        $teamId   = (string) env('IOS_APPLE_TEAM_ID', 'PDNU7JKBQZ');
-        $bundleId = (string) env('IOS_BUNDLE_ID', 'com.americantv.userapp');
+        $teamId   = (string) config('well_known.ios_team_id');
+        $bundleId = (string) config('well_known.ios_bundle_id');
         return "{$teamId}.{$bundleId}";
     }
 
     private function androidPackageName(): string
     {
-        return (string) env('ANDROID_PACKAGE_NAME', 'com.americantv.app');
+        return (string) config('well_known.android_package_name');
     }
 
     /**
@@ -126,7 +123,7 @@ class WellKnownController extends Controller
      * rotation propagates within the day. Apple's verification daemon
      * respects Cache-Control max-age; Android's does too.
      */
-    private function respond(array $payload): Response
+    private function respond(array $payload): JsonResponse
     {
         return response()
             ->json($payload, 200, [], JSON_UNESCAPED_SLASHES)

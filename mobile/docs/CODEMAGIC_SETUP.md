@@ -169,18 +169,35 @@ Codemagic Teams → **Environment variables → Add group** named
 
 | Key | Where to get it | Required? | Notes |
 |---|---|---|---|
-| `API_BASE_URL` | Your Laravel host | **yes** | e.g. `https://americantv.vip/api/v1`. Preflight rejects non-HTTPS. |
-| `BUILD_VERSION` | Bump per release | **yes** | Currently `3.0.0`. Preflight rejects non-SemVer. |
-| `BUILD_NUMBER` | Auto-set by Codemagic from latest + 1 | auto | Don't override unless re-uploading. |
-| `RELEASE_NOTIFY_EMAIL` | Any email | **yes** | Build success/failure notifications. Not secret. |
-| `REVENUECAT_IOS_KEY` | RevenueCat dashboard | iOS only | `appl_...` |
-| `REVENUECAT_ANDROID_KEY` | RevenueCat dashboard | Android only | `goog_...` |
-| `GOOGLE_OAUTH_CLIENT_ID_ANDROID` | Google Cloud Console → OAuth client IDs | Android only | For native Google Sign-In. |
-| `FIREBASE_GOOGLE_SERVICE_INFO_PLIST` | base64 of iOS `GoogleService-Info.plist` | `ios-app-store` only | `base64 -i GoogleService-Info.plist`. Empty = Firebase skipped at runtime. |
-| `FIREBASE_GOOGLE_SERVICES_JSON` | base64 of Android `google-services.json` | `android-production` only | `base64 -i google-services.json`. Empty = Firebase skipped. |
-| `ANDROID_RELEASE_SHA256` | SHA-256 of upload keystore | `android-production` only | See §4 — use `extract-keystore-sha256.sh`. Preflight rejects the placeholder. Powers `/.well-known/assetlinks.json`. |
-| `APP_ICON_PNG_B64` | base64 of `mobile/assets/icon/app-icon.png` | optional | Overrides the committed master at build time. |
-| `APP_ICON_ADAPTIVE_FG_PNG_B64` | base64 of adaptive-foreground PNG | optional | Same — optional override. |
+| `REVENUECAT_IOS_KEY` | RevenueCat dashboard → Project → API keys → iOS public SDK key | iOS only | `appl_...`. Public SDK key — shipped in binary. |
+| `REVENUECAT_ANDROID_KEY` | RevenueCat dashboard → Android public SDK key | Android only | `goog_...`. Public SDK key — shipped in binary. |
+| `GOOGLE_OAUTH_CLIENT_ID_ANDROID` | Google Cloud Console → OAuth client IDs (also visible in `mobile/android/app/google-services.json`) | Android only | For native Google Sign-In. Public identifier. |
+
+Android workflows do **not** include `google_play` auto-publishing.
+The AAB is surfaced as a Codemagic build artifact instead — download
+it from the build's **Artifacts** tab and upload manually via the
+Play Console. To switch back to automated publishing later, restore
+the `publishing.google_play` block in `codemagic.yaml` and add
+`GCLOUD_SERVICE_ACCOUNT_CREDENTIALS` (Google Play Console → API access
+service account JSON, not Firebase Admin) to this env group.
+
+The following are **not** env-group entries — they live elsewhere:
+
+- **`API_BASE_URL`** — hardcoded inline in `codemagic.yaml` (`https://americantv.vip/api/v1`). Single environment, never rotates, no reason to indirect through Codemagic.
+- **`GoogleService-Info.plist`** (iOS Firebase) — committed at `mobile/ios/Runner/GoogleService-Info.plist`. Drop the file in once from Firebase Console → Project settings → iOS app.
+- **`google-services.json`** (Android Firebase) — committed at `mobile/android/app/google-services.json`. Same pattern from the Android tab.
+- **`BUILD_VERSION`** — read from `mobile/pubspec.yaml`'s `version:` field. Bump there per release.
+- **`BUILD_NUMBER`** — auto-set by Codemagic from the latest store version + 1.
+- **`RELEASE_NOTIFY_EMAIL`** — hardcoded recipients in each workflow's `email.recipients` block. Edit YAML to rotate.
+- **`BUNDLE_ID`** / **`PACKAGE_NAME`** / **`GOOGLE_PLAY_TRACK`** / **`ROLLOUT_FRACTION`** / **`APPLE_TEAM_ID`** — workflow-level vars in YAML, not in the env group.
+App icon masters (`app-icon.png`, `app-icon-adaptive-foreground.png`)
+are committed under `mobile/assets/icon/` and read directly from
+disk by `flutter_launcher_icons` — no env-var override.
+
+Static config (`BUNDLE_ID`, `PACKAGE_NAME`, `GOOGLE_PLAY_TRACK`,
+`ROLLOUT_FRACTION`, `APPLE_TEAM_ID`) is hardcoded inline at the
+workflow level in `codemagic.yaml`, not in this env group. Edit the
+YAML to change them, not the Codemagic UI.
 
 Once the group is saved, attach it to all four workflows (the YAML
 references it via `groups: [americantv-prod]`).
