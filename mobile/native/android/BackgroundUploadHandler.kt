@@ -2,6 +2,12 @@ package com.americantv.app.upload
 
 import android.content.Context
 import androidx.work.*
+// Explicit import disambiguates from kotlin.Result. Without it, K2 (Kotlin
+// 2.x) resolves the unqualified `Result` inside UploadChunkWorker as
+// kotlin.Result, which then needs a type parameter and a Throwable arg
+// for .failure() — cascading into ~25 spurious errors across doWork().
+// Kotlin 1.9 happened to prefer the inherited nested class; K2 doesn't.
+import androidx.work.ListenableWorker.Result
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
