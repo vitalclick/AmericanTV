@@ -18,9 +18,15 @@
 
 definitions:
   setup_flutter: &setup_flutter
-    flutter: stable
+    # Pin Flutter rather than tracking `stable` — every implicit upgrade
+    # is a new opportunity for a breaking change in dependencies (the
+    # better_player_plus → intl 0.20 conflict we just hit being one).
+    # 3.32.8 ships Dart 3.8.1, satisfying our pubspec `^3.5.0`. Bump
+    # deliberately after testing the next stable, not implicitly.
+    flutter: 3.32.8
     xcode: latest
     cocoapods: default
+    java: 21
 
   # Shared scripts. YAML aliases can't be flattened into an outer
   # sequence (`- *list_alias` becomes one nested element, not N spread
@@ -555,7 +561,6 @@ workflows:
   # =====================================================================
   android-internal:
     name: Android — Internal Testing
-    instance_type: linux
     max_build_duration: 60
     environment:
       <<: *setup_flutter
@@ -638,7 +643,6 @@ workflows:
   # =====================================================================
   android-production:
     name: Android — Production
-    instance_type: linux
     max_build_duration: 60
     environment:
       <<: *setup_flutter
