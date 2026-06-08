@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Response;
+use Illuminate\Http\JsonResponse;
 
 /**
  * Serves the .well-known files that drive iOS Universal Links and Android
@@ -29,7 +29,7 @@ class WellKnownController extends Controller
      * Team ID + bundle ID come from env so staging environments can serve
      * their own AASA (different Team / bundle) without a code change.
      */
-    public function appleAppSiteAssociation(): Response
+    public function appleAppSiteAssociation(): JsonResponse
     {
         $appId = $this->iosAppId();
 
@@ -76,7 +76,7 @@ class WellKnownController extends Controller
      * rotation doesn't require a code deploy. Package name comes from
      * IOS / ANDROID_PACKAGE_NAME env so staging can ship its own.
      */
-    public function androidAssetLinks(): Response
+    public function androidAssetLinks(): JsonResponse
     {
         $fingerprint = (string) env(
             'ANDROID_RELEASE_SHA256',
@@ -126,7 +126,7 @@ class WellKnownController extends Controller
      * rotation propagates within the day. Apple's verification daemon
      * respects Cache-Control max-age; Android's does too.
      */
-    private function respond(array $payload): Response
+    private function respond(array $payload): JsonResponse
     {
         return response()
             ->json($payload, 200, [], JSON_UNESCAPED_SLASHES)
