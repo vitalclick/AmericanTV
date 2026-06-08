@@ -23,7 +23,10 @@ plugins {
     // AGP 8.2.1+. We're on 8.3.0 for a comfortable margin.
     // See https://issuetracker.google.com/issues/294137077
     id "com.android.application" version "8.3.0" apply false
-    id "org.jetbrains.kotlin.android" version "1.9.23" apply false
+    // Bumped from 1.9.23 — Flutter plugin's embedding compatibility check
+    // started warning "requires a newer version of the Kotlin Gradle plugin"
+    // on the Codemagic build. 2.1.0 is compatible with AGP 8.3.
+    id "org.jetbrains.kotlin.android" version "2.1.0" apply false
 }
 
 include ":app"
