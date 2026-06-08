@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
-import '../../library/data/library_repository.dart';
-import '../../video/data/comment_repository.dart';
+import '../../features/library/data/library_repository.dart';
+import '../../features/video/data/comment_repository.dart';
 
 /// Single global banner that aggregates dropped comments + dropped
 /// watch-later ops. Replaces the two separate banners we had before so

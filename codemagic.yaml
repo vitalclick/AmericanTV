@@ -269,6 +269,23 @@ definitions:
           echo "[ids] PRODUCT_BUNDLE_IDENTIFIER set in $MATCHES build configurations."
         fi
 
+    - &s_env_file
+      name: Write .env from group variables
+      # pubspec declares `.env` as a Flutter asset. flutter analyze fails
+      # if the file is missing, so write it BEFORE pub_get / analyze
+      # rather than after. RevenueCat and Google OAuth values are
+      # optional — empty values disable the feature at runtime instead
+      # of failing the build.
+      script: |
+        cd $CM_BUILD_DIR/mobile
+        cat > .env <<EOF
+        API_BASE_URL=https://americantv.vip/api/v1
+        REVENUECAT_IOS_KEY=$REVENUECAT_IOS_KEY
+        REVENUECAT_ANDROID_KEY=$REVENUECAT_ANDROID_KEY
+        GOOGLE_OAUTH_CLIENT_ID_ANDROID=$GOOGLE_OAUTH_CLIENT_ID_ANDROID
+        ENABLE_CRASHLYTICS=true
+        EOF
+
     - &s_pub_get
       name: Resolve dependencies
       script: |
@@ -331,20 +348,10 @@ workflows:
       - *s_android_release
       - *s_icon_generate
       - *s_ids_rewrite
+      - *s_env_file
       - *s_pub_get
       - *s_codegen
       - *s_analyze_test
-
-      - name: Write .env from group variables
-        script: |
-          cd $CM_BUILD_DIR/mobile
-          cat > .env <<EOF
-          API_BASE_URL=https://americantv.vip/api/v1
-          REVENUECAT_IOS_KEY=$REVENUECAT_IOS_KEY
-          REVENUECAT_ANDROID_KEY=$REVENUECAT_ANDROID_KEY
-          GOOGLE_OAUTH_CLIENT_ID_ANDROID=$GOOGLE_OAUTH_CLIENT_ID_ANDROID
-          ENABLE_CRASHLYTICS=true
-          EOF
 
       - name: Verify Firebase iOS config
         # GoogleService-Info.plist lives in the repo at
@@ -473,19 +480,10 @@ workflows:
       - *s_android_release
       - *s_icon_generate
       - *s_ids_rewrite
+      - *s_env_file
       - *s_pub_get
       - *s_codegen
       - *s_analyze_test
-      - name: Write .env from group variables
-        script: |
-          cd $CM_BUILD_DIR/mobile
-          cat > .env <<EOF
-          API_BASE_URL=https://americantv.vip/api/v1
-          REVENUECAT_IOS_KEY=$REVENUECAT_IOS_KEY
-          REVENUECAT_ANDROID_KEY=$REVENUECAT_ANDROID_KEY
-          GOOGLE_OAUTH_CLIENT_ID_ANDROID=$GOOGLE_OAUTH_CLIENT_ID_ANDROID
-          ENABLE_CRASHLYTICS=true
-          EOF
       - name: Verify Firebase iOS config
         script: |
           cd $CM_BUILD_DIR/mobile
@@ -586,20 +584,10 @@ workflows:
       - *s_android_release
       - *s_icon_generate
       - *s_ids_rewrite
+      - *s_env_file
       - *s_pub_get
       - *s_codegen
       - *s_analyze_test
-
-      - name: Write .env from group variables
-        script: |
-          cd $CM_BUILD_DIR/mobile
-          cat > .env <<EOF
-          API_BASE_URL=https://americantv.vip/api/v1
-          REVENUECAT_IOS_KEY=$REVENUECAT_IOS_KEY
-          REVENUECAT_ANDROID_KEY=$REVENUECAT_ANDROID_KEY
-          GOOGLE_OAUTH_CLIENT_ID_ANDROID=$GOOGLE_OAUTH_CLIENT_ID_ANDROID
-          ENABLE_CRASHLYTICS=true
-          EOF
 
       - name: Verify Firebase Android config
         # google-services.json lives in the repo at
@@ -623,7 +611,14 @@ workflows:
       - name: Build AAB
         script: |
           cd $CM_BUILD_DIR/mobile
+          # Play Console wants the AAB; sideloading / direct distribution
+          # wants the APK. Both build from the same intermediate
+          # artifacts so the second invocation reuses Gradle's cache and
+          # adds ~30s rather than doubling the time.
           flutter build appbundle --release \
+            --build-name=$BUILD_VERSION \
+            --build-number=$BUILD_NUMBER
+          flutter build apk --release \
             --build-name=$BUILD_VERSION \
             --build-number=$BUILD_NUMBER
 
@@ -631,6 +626,7 @@ workflows:
       # Manual upload to Play Console Internal Testing.
       # Download from the Codemagic build page → Artifacts.
       - mobile/build/app/outputs/bundle/release/app-release.aab
+      - mobile/build/app/outputs/flutter-apk/app-release.apk
       - mobile/build/app/outputs/mapping/release/mapping.txt
 
     publishing:
@@ -664,19 +660,10 @@ workflows:
       - *s_android_release
       - *s_icon_generate
       - *s_ids_rewrite
+      - *s_env_file
       - *s_pub_get
       - *s_codegen
       - *s_analyze_test
-      - name: Write .env from group variables
-        script: |
-          cd $CM_BUILD_DIR/mobile
-          cat > .env <<EOF
-          API_BASE_URL=https://americantv.vip/api/v1
-          REVENUECAT_IOS_KEY=$REVENUECAT_IOS_KEY
-          REVENUECAT_ANDROID_KEY=$REVENUECAT_ANDROID_KEY
-          GOOGLE_OAUTH_CLIENT_ID_ANDROID=$GOOGLE_OAUTH_CLIENT_ID_ANDROID
-          ENABLE_CRASHLYTICS=true
-          EOF
       - name: Verify Firebase Android config
         # Production builds require Firebase to surface crash reports.
         script: |
@@ -690,7 +677,14 @@ workflows:
       - name: Build AAB
         script: |
           cd $CM_BUILD_DIR/mobile
+          # Play Console wants the AAB; sideloading / direct distribution
+          # wants the APK. Both build from the same intermediate
+          # artifacts so the second invocation reuses Gradle's cache and
+          # adds ~30s rather than doubling the time.
           flutter build appbundle --release \
+            --build-name=$BUILD_VERSION \
+            --build-number=$BUILD_NUMBER
+          flutter build apk --release \
             --build-name=$BUILD_VERSION \
             --build-number=$BUILD_NUMBER
 
@@ -700,6 +694,7 @@ workflows:
       # uploading, set rollout to 5% in the Play Console, monitor
       # Crashlytics + ANRs for 24h, then ramp.
       - mobile/build/app/outputs/bundle/release/app-release.aab
+      - mobile/build/app/outputs/flutter-apk/app-release.apk
       - mobile/build/app/outputs/mapping/release/mapping.txt
 
     publishing:
