@@ -10,7 +10,12 @@
 # Add back to REQUIRED + a hard-fail block if any future variable
 # actually blocks the build.
 
-set -uo pipefail
+# NOTE: deliberately NOT using `set -u`. The macOS builder runs bash 3.2
+# (Apple's bundled version), which treats an empty array reference as
+# unbound — so `"${CHECK[@]}"` fatals before the loop even starts on
+# workflows where the case below doesn't add anything. pipefail still
+# catches real script errors.
+set -o pipefail
 
 # ----- optional vars per workflow ----------------------------------------
 # Variables that previously lived here moved out as config matured:
@@ -42,15 +47,19 @@ esac
 
 declare -a INACTIVE=()
 declare -a ACTIVE=()
-for entry in "${CHECK[@]}"; do
-  VAR="${entry%%:*}"
-  DESC="${entry#*:}"
-  if [ -z "${!VAR-}" ]; then
-    INACTIVE+=("$VAR ($DESC)")
-  else
-    ACTIVE+=("$VAR ($DESC)")
-  fi
-done
+# Iterate only if there's anything in CHECK; bash 3.2 (macOS builder)
+# trips on `"${CHECK[@]}"` when the array is empty.
+if [ "${#CHECK[@]}" -gt 0 ]; then
+  for entry in "${CHECK[@]}"; do
+    VAR="${entry%%:*}"
+    DESC="${entry#*:}"
+    if [ -z "${!VAR-}" ]; then
+      INACTIVE+=("$VAR ($DESC)")
+    else
+      ACTIVE+=("$VAR ($DESC)")
+    fi
+  done
+fi
 
 echo "[preflight] workflow=$WORKFLOW"
 if [ "${#ACTIVE[@]}" -gt 0 ]; then
