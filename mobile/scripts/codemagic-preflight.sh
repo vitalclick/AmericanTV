@@ -14,11 +14,17 @@
 set -uo pipefail
 
 # ----- required vars per workflow ----------------------------------------
-COMMON_VARS=(
-  API_BASE_URL
-  BUILD_VERSION
-  RELEASE_NOTIFY_EMAIL
-)
+# Several variables that used to live here moved out as the config matured:
+#   API_BASE_URL              -> hardcoded inline in codemagic.yaml
+#   BUILD_VERSION             -> read from mobile/pubspec.yaml
+#   RELEASE_NOTIFY_EMAIL      -> hardcoded inline in email.recipients
+#   APP_ICON_*                -> masters committed at mobile/assets/icon/
+#   FIREBASE_GOOGLE_*         -> committed at the canonical Flutter paths
+#   ANDROID_RELEASE_SHA256    -> Laravel-side env var, not Codemagic
+# What's left below is the set we still genuinely need pasted into
+# the Codemagic env group.
+
+COMMON_VARS=()
 
 IOS_VARS=(
   REVENUECAT_IOS_KEY
@@ -27,22 +33,16 @@ IOS_VARS=(
 ANDROID_VARS=(
   REVENUECAT_ANDROID_KEY
   GOOGLE_OAUTH_CLIENT_ID_ANDROID
+  GCLOUD_SERVICE_ACCOUNT_CREDENTIALS
 )
 
-# Production-only: Firebase + Android key fingerprint.
-# Note: APP_ICON_PNG_B64 / APP_ICON_ADAPTIVE_FG_PNG_B64 used to be
-# required, but since 3.0.0+14 the icon masters are committed under
-# mobile/assets/icon/. The env vars still work — if set, they
-# override the committed icons (useful for last-minute brand swaps
-# without a code change). Just no longer mandatory.
-IOS_PROD_VARS=(
-  FIREBASE_GOOGLE_SERVICE_INFO_PLIST
-)
+# Production-only sets are empty for now — Firebase configs come from
+# the repo, and the Google Play credential check above already covers
+# the Android production upload. The arrays stay declared so the case
+# block below stays uniform.
+IOS_PROD_VARS=()
 
-ANDROID_PROD_VARS=(
-  FIREBASE_GOOGLE_SERVICES_JSON
-  ANDROID_RELEASE_SHA256
-)
+ANDROID_PROD_VARS=()
 
 # ----- workflow detection ------------------------------------------------
 WORKFLOW="${CM_WORKFLOW_ID:-${WORKFLOW:-unknown}}"
@@ -100,36 +100,10 @@ EOF
 fi
 
 # ----- shape checks ------------------------------------------------------
-# API_BASE_URL must be HTTPS on ALL workflows. iOS App Transport Security
-# blocks cleartext at runtime regardless of whether the build is going to
-# TestFlight or the App Store — a TestFlight install with a cleartext
-# API URL would build successfully and then fail every API call.
-if [[ "$API_BASE_URL" != https://* ]]; then
-  echo "[preflight] FATAL: API_BASE_URL='$API_BASE_URL' is not HTTPS." >&2
-  echo "[preflight] iOS ATS blocks cleartext API calls at runtime even on" >&2
-  echo "[preflight] TestFlight builds. Use https://… in the env group." >&2
-  exit 1
-fi
-
-# BUILD_VERSION must be a valid SemVer (X.Y.Z, optionally with -prerelease)
-# or App Store Connect / Play Console reject the upload at step 22 — but
-# we've already burned 20 minutes of build time by then. Catch typos
-# like 1.0.O (capital O) or 1.0 (missing patch) here.
-if ! [[ "$BUILD_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
-  echo "[preflight] FATAL: BUILD_VERSION='$BUILD_VERSION' is not valid SemVer." >&2
-  echo "[preflight] Expected MAJOR.MINOR.PATCH (e.g. 1.2.3), optionally with" >&2
-  echo "[preflight] a -prerelease suffix (e.g. 1.2.3-beta.1)." >&2
-  exit 1
-fi
-
-# ANDROID_RELEASE_SHA256 must look like a real fingerprint, not the
-# default placeholder.
-if [[ "$WORKFLOW" == "android-production" ]]; then
-  if [[ "$ANDROID_RELEASE_SHA256" == "REPLACE_WITH_KEYSTORE_SHA256_FINGERPRINT" ]]; then
-    echo "[preflight] FATAL: ANDROID_RELEASE_SHA256 still holds the placeholder." >&2
-    echo "[preflight] App Links verification will fail. See CODEMAGIC_SETUP.md." >&2
-    exit 1
-  fi
-fi
+# API_BASE_URL is now hardcoded in codemagic.yaml's .env-write step;
+# BUILD_VERSION comes from pubspec.yaml; ANDROID_RELEASE_SHA256 lives
+# on the Laravel host. None of the historical shape-checks for those
+# apply here anymore. Add new checks above this line as future
+# env vars get introduced.
 
 echo "[preflight] ✓ all required env vars set for workflow=$WORKFLOW"
