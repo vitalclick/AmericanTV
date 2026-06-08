@@ -210,9 +210,17 @@ jobs:
             fi
 
             # Warm caches AFTER migrations land so a column added during
-            # migration shows up in the cached config / routes / views.
+            # migration shows up in the cached config / views.
+            #
+            # route:cache is deliberately skipped: ViserLab's admin.php
+            # registers multiple routes with the same name (GET form +
+            # POST submit share names like admin.login, admin.notification.single
+            # etc). Laravel resolves these at runtime by HTTP verb but
+            # AbstractRouteCollection serialization rejects duplicates,
+            # so route:cache fatals. Fixing the duplicates across the
+            # whole admin surface is a substantial cleanup; for now we
+            # eat the small per-request route-resolution cost.
             $PHP_BIN artisan config:cache
-            $PHP_BIN artisan route:cache
             $PHP_BIN artisan view:cache
             $PHP_BIN artisan storage:link || true
           EOF
