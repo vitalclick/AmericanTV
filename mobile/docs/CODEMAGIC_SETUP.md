@@ -179,8 +179,14 @@ Codemagic Teams → **Environment variables → Add group** named
 | `FIREBASE_GOOGLE_SERVICE_INFO_PLIST` | base64 of iOS `GoogleService-Info.plist` | `ios-app-store` only | `base64 -i GoogleService-Info.plist`. Empty = Firebase skipped at runtime. |
 | `FIREBASE_GOOGLE_SERVICES_JSON` | base64 of Android `google-services.json` | `android-production` only | `base64 -i google-services.json`. Empty = Firebase skipped. |
 | `ANDROID_RELEASE_SHA256` | SHA-256 of upload keystore | `android-production` only | See §4 — use `extract-keystore-sha256.sh`. Preflight rejects the placeholder. Powers `/.well-known/assetlinks.json`. |
-| `APP_ICON_PNG_B64` | base64 of `mobile/assets/icon/app-icon.png` | optional | Overrides the committed master at build time. |
-| `APP_ICON_ADAPTIVE_FG_PNG_B64` | base64 of adaptive-foreground PNG | optional | Same — optional override. |
+App icon masters (`app-icon.png`, `app-icon-adaptive-foreground.png`)
+are committed under `mobile/assets/icon/` and read directly from
+disk by `flutter_launcher_icons` — no env-var override.
+
+Static config (`BUNDLE_ID`, `PACKAGE_NAME`, `GOOGLE_PLAY_TRACK`,
+`ROLLOUT_FRACTION`, `APPLE_TEAM_ID`) is hardcoded inline at the
+workflow level in `codemagic.yaml`, not in this env group. Edit the
+YAML to change them, not the Codemagic UI.
 
 Once the group is saved, attach it to all four workflows (the YAML
 references it via `groups: [americantv-prod]`).

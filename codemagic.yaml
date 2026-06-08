@@ -199,55 +199,22 @@ definitions:
           echo "[android-signing] named 'uploadkey'." >&2
         fi
 
-    - &s_icon_sources
-      name: Drop launcher icon sources
-      # The PNG sources are kept in the Codemagic env group as base64
-      # blobs so the binary doesn't bloat the git history. Decode into
-      # place; flutter_launcher_icons reads them on the next step.
-      script: |
-        cd $CM_BUILD_DIR/mobile
-        mkdir -p assets/icon
-        if [ -n "$APP_ICON_PNG_B64" ]; then
-          echo "$APP_ICON_PNG_B64" | base64 -d > assets/icon/app-icon.png
-        fi
-        if [ -n "$APP_ICON_ADAPTIVE_FG_PNG_B64" ]; then
-          echo "$APP_ICON_ADAPTIVE_FG_PNG_B64" | base64 -d > assets/icon/app-icon-adaptive-foreground.png
-        fi
-
     - &s_icon_generate
       name: Generate launcher icons
-      # ALLOW_DEFAULT_ICON gates the fallback:
-      #   - unset / "false": missing icon source FAILS the build. Used by
-      #     production workflows so we never accidentally ship the
-      #     Flutter default to the store.
-      #   - "true": missing icon source is logged and the build continues
-      #     with the Flutter default. Drops a marker file into the
-      #     artifacts so the marker is visible in the Codemagic UI
-      #     without needing to grep the icon step's logs.
+      # PNG masters are committed at mobile/assets/icon/. The earlier
+      # env-var-base64 fallback was retired once the binaries went into
+      # git (3.0.0+14, commit 87204c9): every clone now has the icon
+      # sources on disk, so flutter_launcher_icons runs unconditionally
+      # and the build can't accidentally ship the Flutter default.
       script: |
         cd $CM_BUILD_DIR/mobile
-        if [ -f assets/icon/app-icon.png ]; then
-          dart run flutter_launcher_icons
-          # Clean up any previous marker if the icons are now in place.
-          rm -f build/.shipped-with-default-icon
-        elif [ "$ALLOW_DEFAULT_ICON" = "true" ]; then
-          echo "No app-icon.png; ALLOW_DEFAULT_ICON=true — using Flutter's default icon."
-          mkdir -p build
-          cat > build/.shipped-with-default-icon <<MARK
-        Workflow: $CM_WORKFLOW_ID
-        Build: $BUILD_VERSION ($BUILD_NUMBER)
-        Reason: APP_ICON_PNG_B64 was not set; ALLOW_DEFAULT_ICON was true.
-
-        Action: populate APP_ICON_PNG_B64 in the americantv-prod env
-        group before the next release. See CODEMAGIC_SETUP.md.
-        MARK
-        else
-          echo "FATAL: No app-icon.png and ALLOW_DEFAULT_ICON is not 'true'."
-          echo "Either populate APP_ICON_PNG_B64 in the env group OR set"
-          echo "ALLOW_DEFAULT_ICON=true on the workflow to acknowledge the"
-          echo "default-icon build."
+        if [ ! -f assets/icon/app-icon.png ]; then
+          echo "FATAL: mobile/assets/icon/app-icon.png is missing." >&2
+          echo "It should be tracked in git from 3.0.0+14 onward." >&2
+          echo "Re-merge main or restore the file before retrying." >&2
           exit 1
         fi
+        dart run flutter_launcher_icons
 
     - &s_ids_rewrite
       name: Rewrite platform identifiers
@@ -339,7 +306,6 @@ workflows:
         # TestFlight is willing to ship a Flutter-default icon during
         # internal-tester smoke runs. App Store Review isn't (see
         # ios-app-store workflow).
-        ALLOW_DEFAULT_ICON: "true"
     integrations:
       app_store_connect: americantv-app-store
     cache:
@@ -357,7 +323,6 @@ workflows:
       - *s_ios_plist
       - *s_android_proguard
       - *s_android_release
-      - *s_icon_sources
       - *s_icon_generate
       - *s_ids_rewrite
       - *s_pub_get
@@ -448,7 +413,6 @@ workflows:
     artifacts:
       - mobile/build/ios/ipa/*.ipa
       - mobile/build/ios/archive/**/dSYMs/**
-      - mobile/build/.shipped-with-default-icon
       - /tmp/xcodebuild_logs/*.log
       - mobile/flutter_drive.log
 
@@ -483,8 +447,6 @@ workflows:
         BUNDLE_ID: com.americantv.userapp
         APP_STORE_APP_ID: 6743315031
         APPLE_TEAM_ID: PDNU7JKBQZ
-        # App Store Review rejects default-icon builds. No ALLOW_DEFAULT_ICON
-        # here so a missing APP_ICON_PNG_B64 fails the build loudly.
     integrations:
       app_store_connect: americantv-app-store
 
@@ -497,7 +459,6 @@ workflows:
       - *s_ios_plist
       - *s_android_proguard
       - *s_android_release
-      - *s_icon_sources
       - *s_icon_generate
       - *s_ids_rewrite
       - *s_pub_get
@@ -565,7 +526,6 @@ workflows:
     artifacts:
       - mobile/build/ios/ipa/*.ipa
       - mobile/build/ios/archive/**/dSYMs/**
-      - mobile/build/.shipped-with-default-icon
       - /tmp/xcodebuild_logs/*.log
 
     publishing:
@@ -596,7 +556,6 @@ workflows:
       vars:
         PACKAGE_NAME: com.americantv.app
         GOOGLE_PLAY_TRACK: internal
-        ALLOW_DEFAULT_ICON: "true"
     cache:
       cache_paths:
         - $HOME/.gradle/caches
@@ -612,7 +571,6 @@ workflows:
       - *s_ios_plist
       - *s_android_proguard
       - *s_android_release
-      - *s_icon_sources
       - *s_icon_generate
       - *s_ids_rewrite
       - *s_pub_get
@@ -655,7 +613,6 @@ workflows:
     artifacts:
       - mobile/build/app/outputs/bundle/release/app-release.aab
       - mobile/build/app/outputs/mapping/release/mapping.txt
-      - mobile/build/.shipped-with-default-icon
 
     publishing:
       google_play:
@@ -699,7 +656,6 @@ workflows:
       - *s_ios_plist
       - *s_android_proguard
       - *s_android_release
-      - *s_icon_sources
       - *s_icon_generate
       - *s_ids_rewrite
       - *s_pub_get
@@ -732,7 +688,6 @@ workflows:
     artifacts:
       - mobile/build/app/outputs/bundle/release/app-release.aab
       - mobile/build/app/outputs/mapping/release/mapping.txt
-      - mobile/build/.shipped-with-default-icon
 
     publishing:
       google_play:
