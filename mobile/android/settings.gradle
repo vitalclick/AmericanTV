@@ -23,10 +23,15 @@ plugins {
     // AGP 8.2.1+. We're on 8.3.0 for a comfortable margin.
     // See https://issuetracker.google.com/issues/294137077
     id "com.android.application" version "8.3.0" apply false
-    // Bumped from 1.9.23 — Flutter plugin's embedding compatibility check
-    // started warning "requires a newer version of the Kotlin Gradle plugin"
-    // on the Codemagic build. 2.1.0 is compatible with AGP 8.3.
-    id "org.jetbrains.kotlin.android" version "2.1.0" apply false
+    // Kotlin 2.0.21 — still K2 (same frontend we already proved compiles
+    // at 2.1.0), but writes class metadata at version 2.0.0 which AGP
+    // 8.3.0's bundled R8 can read. Kotlin 2.1.x metadata (v2.1.0) caused
+    // minifyReleaseWithR8 to throw:
+    //   IllegalArgumentException: Provided Metadata instance has version
+    //   2.1.0, while maximum supported version is 2.0.0.
+    // The alternative (upgrade AGP to 8.6+ for a newer R8) is a bigger
+    // blast radius — sticking with the metadata downgrade.
+    id "org.jetbrains.kotlin.android" version "2.0.21" apply false
 }
 
 include ":app"
