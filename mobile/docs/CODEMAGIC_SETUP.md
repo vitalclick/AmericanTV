@@ -37,7 +37,7 @@ Tick each item before triggering the first TestFlight / Internal build:
 - [ ] Codemagic account connected to the GitHub repo (§1)
 - [ ] App Store Connect API key uploaded as integration `americantv-app-store` (§2)
 - [ ] Google Play service account JSON uploaded (§3)
-- [ ] `uploadkey.jks` uploaded as `americantv-keystore`, alias `uploadkey` (§4)
+- [ ] `uploadkey.jks` uploaded as `uploadkey`, alias `uploadkey` (§4)
 - [ ] `ANDROID_RELEASE_SHA256` set in Laravel production `.env` (§4)
 - [ ] `americantv-prod` env group populated (§5)
 - [ ] App Store Connect record for `com.americantv.userapp` (§6)
@@ -103,7 +103,7 @@ alias, override `CM_KEYSTORE_ALIAS` in the env group.
 
 1. Codemagic Teams → **Code signing identities → Android keystores** →
    **Upload**.
-2. **Reference name**: `americantv-keystore` (must match `codemagic.yaml`'s
+2. **Reference name**: `uploadkey` (must match `codemagic.yaml`'s
    `android_signing` entry).
 3. Upload the `.jks` file.
 4. **Keystore password**: provided by whoever generated the keystore.
@@ -259,7 +259,7 @@ Plug the credentials into:
    | `flutter build ipa` exits with `MissingPluginException` | `flutter pub get` step in `base_scripts` failed earlier; check the log. |
    | `agvtool: ... not found` | The "Set bundle identifier + version" step assumes Xcode 15+; confirm `xcode: latest` resolved. |
    | `keychain initialize` permission error | API key needs App Manager (not Developer) role. |
-   | `[android-signing] WARNING: CM_KEYSTORE_PATH is empty` | Codemagic didn't find a keystore named `americantv-keystore`. Re-check §4. |
+   | `[android-signing] WARNING: CM_KEYSTORE_PATH is empty` | Codemagic didn't find a keystore named `uploadkey`. Re-check §4. |
    | `PHP Fatal error: Access level to Tests\TestCase::createApplication() must be public` | Old commit — pull latest; fixed in `c025a35`. |
 
 3. After IPA upload, App Store Connect → TestFlight → Internal Testing →

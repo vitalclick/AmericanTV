@@ -196,7 +196,7 @@ definitions:
           echo "[android-signing] No keystore attached. The AAB will sign with the debug key" >&2
           echo "[android-signing] and Play Store will reject it. Confirm Codemagic Teams →" >&2
           echo "[android-signing] Code signing identities → Android keystores has an entry" >&2
-          echo "[android-signing] named 'americantv-keystore'." >&2
+          echo "[android-signing] named 'uploadkey'." >&2
         fi
 
     - &s_icon_sources
@@ -592,7 +592,7 @@ workflows:
       <<: *setup_flutter
       <<: *env_groups_production
       android_signing:
-        - americantv-keystore
+        - uploadkey
       vars:
         PACKAGE_NAME: com.americantv.app
         GOOGLE_PLAY_TRACK: internal
@@ -681,7 +681,7 @@ workflows:
       <<: *setup_flutter
       <<: *env_groups_production
       android_signing:
-        - americantv-keystore
+        - uploadkey
       vars:
         PACKAGE_NAME: com.americantv.app
         GOOGLE_PLAY_TRACK: production
