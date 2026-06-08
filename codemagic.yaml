@@ -459,8 +459,12 @@ workflows:
         beta_groups:
           - Internal Testers
       email:
+        # Hardcoded rather than $RELEASE_NOTIFY_EMAIL because Codemagic
+        # validates this field at config-parse time before env vars are
+        # expanded, and a $-reference resolves to null then. To rotate
+        # the destination, edit the YAML.
         recipients:
-          - $RELEASE_NOTIFY_EMAIL
+          - toni@vitalclick.co.za
         notify:
           success: true
           failure: true
@@ -570,8 +574,12 @@ workflows:
         # Submits the build to App Store Review (not TestFlight).
         submit_to_app_store: true
       email:
+        # Hardcoded rather than $RELEASE_NOTIFY_EMAIL because Codemagic
+        # validates this field at config-parse time before env vars are
+        # expanded, and a $-reference resolves to null then. To rotate
+        # the destination, edit the YAML.
         recipients:
-          - $RELEASE_NOTIFY_EMAIL
+          - toni@vitalclick.co.za
 
   # =====================================================================
   # Android — Internal Testing
@@ -655,8 +663,12 @@ workflows:
         track: $GOOGLE_PLAY_TRACK
         submit_as_draft: false
       email:
+        # Hardcoded rather than $RELEASE_NOTIFY_EMAIL because Codemagic
+        # validates this field at config-parse time before env vars are
+        # expanded, and a $-reference resolves to null then. To rotate
+        # the destination, edit the YAML.
         recipients:
-          - $RELEASE_NOTIFY_EMAIL
+          - toni@vitalclick.co.za
 
   # =====================================================================
   # Android — Production
@@ -729,5 +741,9 @@ workflows:
         in_app_update_priority: 3
         rollout_fraction: $ROLLOUT_FRACTION
       email:
+        # Hardcoded rather than $RELEASE_NOTIFY_EMAIL because Codemagic
+        # validates this field at config-parse time before env vars are
+        # expanded, and a $-reference resolves to null then. To rotate
+        # the destination, edit the YAML.
         recipients:
-          - $RELEASE_NOTIFY_EMAIL
+          - toni@vitalclick.co.za
