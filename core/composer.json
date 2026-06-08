@@ -80,7 +80,9 @@
             "dev-master": "11.x-dev"
         },
         "laravel": {
-            "dont-discover": []
+            "dont-discover": [
+                "laramin/utility"
+            ]
         }
     },
     "config": {

@@ -1,6 +1,15 @@
 <?php
 use Illuminate\Support\Facades\Facade;
-require_once('timezone.php');
+// ViserLab shipped this as `require_once('timezone.php')` reading a
+// separate config/timezone.php that set $timezone. That breaks under
+// `artisan config:cache`: Laravel's LoadConfiguration bootstrapper
+// already requires config/timezone.php to register a "timezone"
+// config namespace before it requires this file, so PHP marks the
+// file as already-loaded and our require_once becomes a no-op —
+// $timezone never gets assigned in app.php's scope and line 69 below
+// throws "Undefined variable". Inlining sidesteps the require dance
+// entirely.
+$timezone = 'UTC';
 return [
 
     /*
