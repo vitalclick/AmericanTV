@@ -78,13 +78,10 @@ class WellKnownController extends Controller
      */
     public function androidAssetLinks(): JsonResponse
     {
-        $fingerprint = (string) env(
-            'ANDROID_RELEASE_SHA256',
-            // The placeholder is intentional — without a real fingerprint
-            // App Links won't verify, and we'd rather see a verification
-            // failure than ship the wrong cert. Replace via .env.
-            'REPLACE_WITH_KEYSTORE_SHA256_FINGERPRINT',
-        );
+        // Read via config() rather than env() directly — env() returns
+        // null in controllers once config:cache has run. config/well_known.php
+        // calls env() at config-load time, where the cache layer expects it.
+        $fingerprint = (string) config('well_known.android_release_sha256');
 
         $payload = [
             [
@@ -110,14 +107,14 @@ class WellKnownController extends Controller
      */
     private function iosAppId(): string
     {
-        $teamId   = (string) env('IOS_APPLE_TEAM_ID', 'PDNU7JKBQZ');
-        $bundleId = (string) env('IOS_BUNDLE_ID', 'com.americantv.userapp');
+        $teamId   = (string) config('well_known.ios_team_id');
+        $bundleId = (string) config('well_known.ios_bundle_id');
         return "{$teamId}.{$bundleId}";
     }
 
     private function androidPackageName(): string
     {
-        return (string) env('ANDROID_PACKAGE_NAME', 'com.americantv.app');
+        return (string) config('well_known.android_package_name');
     }
 
     /**
