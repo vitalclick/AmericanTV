@@ -11,6 +11,10 @@ android {
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
+        // Required by flutter_local_notifications (and any other plugin that
+        // pulls in java.time on minSdk < 26). Without this, AGP fails the
+        // AAR metadata check at :app:checkReleaseAarMetadata.
+        coreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_1_8
         targetCompatibility = JavaVersion.VERSION_1_8
     }
@@ -47,4 +51,10 @@ android {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    // Companion to coreLibraryDesugaringEnabled above. 2.1.4 is the floor
+    // flutter_local_notifications recommends as of plugin v19.
+    coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:2.1.4"
 }
