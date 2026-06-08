@@ -18,8 +18,12 @@ pluginManagement {
 
 plugins {
     id "dev.flutter.flutter-plugin-loader" version "1.0.0"
-    id "com.android.application" version "8.1.0" apply false
-    id "org.jetbrains.kotlin.android" version "1.8.22" apply false
+    // Bumped from 8.1.0 to fix the "core-for-system-modules.jar" jlink
+    // transform error on Java 21 builders. Google's known bug, fixed in
+    // AGP 8.2.1+. We're on 8.3.0 for a comfortable margin.
+    // See https://issuetracker.google.com/issues/294137077
+    id "com.android.application" version "8.3.0" apply false
+    id "org.jetbrains.kotlin.android" version "1.9.23" apply false
 }
 
 include ":app"
