@@ -33,7 +33,6 @@ IOS_VARS=(
 ANDROID_VARS=(
   REVENUECAT_ANDROID_KEY
   GOOGLE_OAUTH_CLIENT_ID_ANDROID
-  GCLOUD_SERVICE_ACCOUNT_CREDENTIALS
 )
 
 # Production-only sets are empty for now — Firebase configs come from

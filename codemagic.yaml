@@ -564,7 +564,6 @@ workflows:
         - uploadkey
       vars:
         PACKAGE_NAME: com.americantv.app
-        GOOGLE_PLAY_TRACK: internal
     cache:
       cache_paths:
         - $HOME/.gradle/caches
@@ -624,19 +623,13 @@ workflows:
             --build-number=$BUILD_NUMBER
 
     artifacts:
+      # Manual upload to Play Console Internal Testing.
+      # Download from the Codemagic build page → Artifacts.
       - mobile/build/app/outputs/bundle/release/app-release.aab
       - mobile/build/app/outputs/mapping/release/mapping.txt
 
     publishing:
-      google_play:
-        credentials: $GCLOUD_SERVICE_ACCOUNT_CREDENTIALS
-        track: $GOOGLE_PLAY_TRACK
-        submit_as_draft: false
       email:
-        # Hardcoded rather than $RELEASE_NOTIFY_EMAIL because Codemagic
-        # validates this field at config-parse time before env vars are
-        # expanded, and a $-reference resolves to null then. To rotate
-        # the destination, edit the YAML.
         recipients:
           - toni@vitalclick.co.za
 
@@ -654,10 +647,6 @@ workflows:
         - uploadkey
       vars:
         PACKAGE_NAME: com.americantv.app
-        GOOGLE_PLAY_TRACK: production
-        # Staged rollout — 10% on first push to production. Bump in the
-        # Play Console dashboard once the release is healthy.
-        ROLLOUT_FRACTION: 0.1
         # Production builds must ship the brand icon; missing icon fails.
 
     scripts:
@@ -702,19 +691,14 @@ workflows:
             --build-number=$BUILD_NUMBER
 
     artifacts:
+      # Manual upload to Play Console Production track.
+      # Production releases need a staged rollout: in Play Console after
+      # uploading, set rollout to 5% in the Play Console, monitor
+      # Crashlytics + ANRs for 24h, then ramp.
       - mobile/build/app/outputs/bundle/release/app-release.aab
       - mobile/build/app/outputs/mapping/release/mapping.txt
 
     publishing:
-      google_play:
-        credentials: $GCLOUD_SERVICE_ACCOUNT_CREDENTIALS
-        track: production
-        in_app_update_priority: 3
-        rollout_fraction: $ROLLOUT_FRACTION
       email:
-        # Hardcoded rather than $RELEASE_NOTIFY_EMAIL because Codemagic
-        # validates this field at config-parse time before env vars are
-        # expanded, and a $-reference resolves to null then. To rotate
-        # the destination, edit the YAML.
         recipients:
           - toni@vitalclick.co.za

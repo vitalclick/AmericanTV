@@ -169,11 +169,17 @@ Codemagic Teams → **Environment variables → Add group** named
 
 | Key | Where to get it | Required? | Notes |
 |---|---|---|---|
-| `GCLOUD_SERVICE_ACCOUNT_CREDENTIALS` | Google Play Console → Setup → API access → Service account → Manage keys → JSON | **yes** (Android) | Whole JSON contents. Mark Secret. |
 | `REVENUECAT_IOS_KEY` | RevenueCat dashboard → Project → API keys → iOS public SDK key | iOS only | `appl_...`. Public SDK key — shipped in binary. |
 | `REVENUECAT_ANDROID_KEY` | RevenueCat dashboard → Android public SDK key | Android only | `goog_...`. Public SDK key — shipped in binary. |
-| `GOOGLE_OAUTH_CLIENT_ID_ANDROID` | Google Cloud Console → OAuth client IDs | Android only | For native Google Sign-In. Public identifier. |
-| `ANDROID_RELEASE_SHA256` | Run `mobile/scripts/extract-keystore-sha256.sh` | `android-production` only | Powers `/.well-known/assetlinks.json`. Public fingerprint. |
+| `GOOGLE_OAUTH_CLIENT_ID_ANDROID` | Google Cloud Console → OAuth client IDs (also visible in `mobile/android/app/google-services.json`) | Android only | For native Google Sign-In. Public identifier. |
+
+Android workflows do **not** include `google_play` auto-publishing.
+The AAB is surfaced as a Codemagic build artifact instead — download
+it from the build's **Artifacts** tab and upload manually via the
+Play Console. To switch back to automated publishing later, restore
+the `publishing.google_play` block in `codemagic.yaml` and add
+`GCLOUD_SERVICE_ACCOUNT_CREDENTIALS` (Google Play Console → API access
+service account JSON, not Firebase Admin) to this env group.
 
 The following are **not** env-group entries — they live elsewhere:
 
