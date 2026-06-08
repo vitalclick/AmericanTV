@@ -169,16 +169,21 @@ Codemagic Teams → **Environment variables → Add group** named
 
 | Key | Where to get it | Required? | Notes |
 |---|---|---|---|
-| `API_BASE_URL` | Your Laravel host | **yes** | e.g. `https://americantv.vip/api/v1`. Preflight rejects non-HTTPS. |
-| `BUILD_VERSION` | Bump per release | **yes** | Currently `3.0.0`. Preflight rejects non-SemVer. |
-| `BUILD_NUMBER` | Auto-set by Codemagic from latest + 1 | auto | Don't override unless re-uploading. |
-| `RELEASE_NOTIFY_EMAIL` | Any email | **yes** | Build success/failure notifications. Not secret. |
-| `REVENUECAT_IOS_KEY` | RevenueCat dashboard | iOS only | `appl_...` |
-| `REVENUECAT_ANDROID_KEY` | RevenueCat dashboard | Android only | `goog_...` |
-| `GOOGLE_OAUTH_CLIENT_ID_ANDROID` | Google Cloud Console → OAuth client IDs | Android only | For native Google Sign-In. |
-| `FIREBASE_GOOGLE_SERVICE_INFO_PLIST` | base64 of iOS `GoogleService-Info.plist` | `ios-app-store` only | `base64 -i GoogleService-Info.plist`. Empty = Firebase skipped at runtime. |
-| `FIREBASE_GOOGLE_SERVICES_JSON` | base64 of Android `google-services.json` | `android-production` only | `base64 -i google-services.json`. Empty = Firebase skipped. |
-| `ANDROID_RELEASE_SHA256` | SHA-256 of upload keystore | `android-production` only | See §4 — use `extract-keystore-sha256.sh`. Preflight rejects the placeholder. Powers `/.well-known/assetlinks.json`. |
+| `GCLOUD_SERVICE_ACCOUNT_CREDENTIALS` | Google Play Console → Setup → API access → Service account → Manage keys → JSON | **yes** (Android) | Whole JSON contents. Mark Secret. |
+| `REVENUECAT_IOS_KEY` | RevenueCat dashboard → Project → API keys → iOS public SDK key | iOS only | `appl_...`. Public SDK key — shipped in binary. |
+| `REVENUECAT_ANDROID_KEY` | RevenueCat dashboard → Android public SDK key | Android only | `goog_...`. Public SDK key — shipped in binary. |
+| `GOOGLE_OAUTH_CLIENT_ID_ANDROID` | Google Cloud Console → OAuth client IDs | Android only | For native Google Sign-In. Public identifier. |
+| `ANDROID_RELEASE_SHA256` | Run `mobile/scripts/extract-keystore-sha256.sh` | `android-production` only | Powers `/.well-known/assetlinks.json`. Public fingerprint. |
+
+The following are **not** env-group entries — they live elsewhere:
+
+- **`API_BASE_URL`** — hardcoded inline in `codemagic.yaml` (`https://americantv.vip/api/v1`). Single environment, never rotates, no reason to indirect through Codemagic.
+- **`GoogleService-Info.plist`** (iOS Firebase) — committed at `mobile/ios/Runner/GoogleService-Info.plist`. Drop the file in once from Firebase Console → Project settings → iOS app.
+- **`google-services.json`** (Android Firebase) — committed at `mobile/android/app/google-services.json`. Same pattern from the Android tab.
+- **`BUILD_VERSION`** — read from `mobile/pubspec.yaml`'s `version:` field. Bump there per release.
+- **`BUILD_NUMBER`** — auto-set by Codemagic from the latest store version + 1.
+- **`RELEASE_NOTIFY_EMAIL`** — hardcoded recipients in each workflow's `email.recipients` block. Edit YAML to rotate.
+- **`BUNDLE_ID`** / **`PACKAGE_NAME`** / **`GOOGLE_PLAY_TRACK`** / **`ROLLOUT_FRACTION`** / **`APPLE_TEAM_ID`** — workflow-level vars in YAML, not in the env group.
 App icon masters (`app-icon.png`, `app-icon-adaptive-foreground.png`)
 are committed under `mobile/assets/icon/` and read directly from
 disk by `flutter_launcher_icons` — no env-var override.

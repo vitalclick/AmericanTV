@@ -333,23 +333,29 @@ workflows:
         script: |
           cd $CM_BUILD_DIR/mobile
           cat > .env <<EOF
-          API_BASE_URL=$API_BASE_URL
+          API_BASE_URL=https://americantv.vip/api/v1
           REVENUECAT_IOS_KEY=$REVENUECAT_IOS_KEY
           REVENUECAT_ANDROID_KEY=$REVENUECAT_ANDROID_KEY
           GOOGLE_OAUTH_CLIENT_ID_ANDROID=$GOOGLE_OAUTH_CLIENT_ID_ANDROID
           ENABLE_CRASHLYTICS=true
           EOF
 
-      - name: Drop Firebase config files
-        # FIREBASE_GOOGLE_SERVICE_INFO_PLIST is a base64-encoded
-        # GoogleService-Info.plist stored in the env group. Decode into
-        # place before pod install so the Firebase pods pick it up.
+      - name: Verify Firebase iOS config
+        # GoogleService-Info.plist lives in the repo at
+        # mobile/ios/Runner/GoogleService-Info.plist. The Flutter build
+        # discovers it automatically from that path. Earlier versions
+        # decoded a base64 env var; the committed-file approach is one
+        # less Codemagic secret to keep in sync.
+        #
+        # Crashlytics symbol upload below treats a missing file as
+        # "Firebase intentionally not configured" and skips gracefully,
+        # so a brand-new clone without Firebase keys still builds.
         script: |
           cd $CM_BUILD_DIR/mobile
-          if [ -n "$FIREBASE_GOOGLE_SERVICE_INFO_PLIST" ]; then
-            echo "$FIREBASE_GOOGLE_SERVICE_INFO_PLIST" | base64 -d > ios/Runner/GoogleService-Info.plist
+          if [ -f ios/Runner/GoogleService-Info.plist ]; then
+            echo "[firebase-ios] config present at ios/Runner/GoogleService-Info.plist"
           else
-            echo "FIREBASE_GOOGLE_SERVICE_INFO_PLIST not set — Firebase will be skipped at runtime."
+            echo "[firebase-ios] config not committed — Firebase iOS features will be inactive."
           fi
 
       - name: Install CocoaPods
@@ -388,10 +394,10 @@ workflows:
         # Crashlytics needs the debug symbols to symbolicate crash
         # reports. iOS releases ship stripped binaries, so without this
         # step every crash on TestFlight shows as a hex address tree.
-        # Skips gracefully if Firebase isn't configured (env var empty).
+        # Skips gracefully if the iOS Firebase config file isn't in the repo.
         script: |
           cd $CM_BUILD_DIR/mobile
-          if [ -z "$FIREBASE_GOOGLE_SERVICE_INFO_PLIST" ]; then
+          if [ ! -f ios/Runner/GoogleService-Info.plist ]; then
             echo "Firebase not configured — skipping dSYM upload."
             exit 0
           fi
@@ -468,17 +474,20 @@ workflows:
         script: |
           cd $CM_BUILD_DIR/mobile
           cat > .env <<EOF
-          API_BASE_URL=$API_BASE_URL
+          API_BASE_URL=https://americantv.vip/api/v1
           REVENUECAT_IOS_KEY=$REVENUECAT_IOS_KEY
           REVENUECAT_ANDROID_KEY=$REVENUECAT_ANDROID_KEY
           GOOGLE_OAUTH_CLIENT_ID_ANDROID=$GOOGLE_OAUTH_CLIENT_ID_ANDROID
           ENABLE_CRASHLYTICS=true
           EOF
-      - name: Drop Firebase config files
+      - name: Verify Firebase iOS config
         script: |
           cd $CM_BUILD_DIR/mobile
-          if [ -n "$FIREBASE_GOOGLE_SERVICE_INFO_PLIST" ]; then
-            echo "$FIREBASE_GOOGLE_SERVICE_INFO_PLIST" | base64 -d > ios/Runner/GoogleService-Info.plist
+          if [ ! -f ios/Runner/GoogleService-Info.plist ]; then
+            echo "FATAL: mobile/ios/Runner/GoogleService-Info.plist missing." >&2
+            echo "App Store builds require Firebase configured. Commit the" >&2
+            echo "plist from Firebase Console → Project settings → iOS app." >&2
+            exit 1
           fi
       - name: Install CocoaPods
         script: |
@@ -508,7 +517,7 @@ workflows:
       - name: Upload dSYMs to Crashlytics
         script: |
           cd $CM_BUILD_DIR/mobile
-          if [ -z "$FIREBASE_GOOGLE_SERVICE_INFO_PLIST" ]; then
+          if [ ! -f ios/Runner/GoogleService-Info.plist ]; then
             echo "Firebase not configured — skipping dSYM upload."
             exit 0
           fi
@@ -581,21 +590,25 @@ workflows:
         script: |
           cd $CM_BUILD_DIR/mobile
           cat > .env <<EOF
-          API_BASE_URL=$API_BASE_URL
+          API_BASE_URL=https://americantv.vip/api/v1
           REVENUECAT_IOS_KEY=$REVENUECAT_IOS_KEY
           REVENUECAT_ANDROID_KEY=$REVENUECAT_ANDROID_KEY
           GOOGLE_OAUTH_CLIENT_ID_ANDROID=$GOOGLE_OAUTH_CLIENT_ID_ANDROID
           ENABLE_CRASHLYTICS=true
           EOF
 
-      - name: Drop google-services.json
-        # FIREBASE_GOOGLE_SERVICES_JSON is a base64-encoded
-        # google-services.json stored in the env group.
+      - name: Verify Firebase Android config
+        # google-services.json lives in the repo at
+        # mobile/android/app/google-services.json. The Gradle plugin
+        # picks it up from that path during the AAB build. Internal
+        # track tolerates a missing file (Firebase features just stay
+        # inactive at runtime); production requires it.
         script: |
           cd $CM_BUILD_DIR/mobile
-          if [ -n "$FIREBASE_GOOGLE_SERVICES_JSON" ]; then
-            mkdir -p android/app
-            echo "$FIREBASE_GOOGLE_SERVICES_JSON" | base64 -d > android/app/google-services.json
+          if [ -f android/app/google-services.json ]; then
+            echo "[firebase-android] config present at android/app/google-services.json"
+          else
+            echo "[firebase-android] config not committed — Firebase Android features will be inactive."
           fi
 
       - name: Bump versionCode + versionName
@@ -665,18 +678,21 @@ workflows:
         script: |
           cd $CM_BUILD_DIR/mobile
           cat > .env <<EOF
-          API_BASE_URL=$API_BASE_URL
+          API_BASE_URL=https://americantv.vip/api/v1
           REVENUECAT_IOS_KEY=$REVENUECAT_IOS_KEY
           REVENUECAT_ANDROID_KEY=$REVENUECAT_ANDROID_KEY
           GOOGLE_OAUTH_CLIENT_ID_ANDROID=$GOOGLE_OAUTH_CLIENT_ID_ANDROID
           ENABLE_CRASHLYTICS=true
           EOF
-      - name: Drop google-services.json
+      - name: Verify Firebase Android config
+        # Production builds require Firebase to surface crash reports.
         script: |
           cd $CM_BUILD_DIR/mobile
-          if [ -n "$FIREBASE_GOOGLE_SERVICES_JSON" ]; then
-            mkdir -p android/app
-            echo "$FIREBASE_GOOGLE_SERVICES_JSON" | base64 -d > android/app/google-services.json
+          if [ ! -f android/app/google-services.json ]; then
+            echo "FATAL: mobile/android/app/google-services.json missing." >&2
+            echo "Production builds require Firebase. Commit the JSON" >&2
+            echo "from Firebase Console → Project settings → Android app." >&2
+            exit 1
           fi
       - name: Build AAB
         script: |
