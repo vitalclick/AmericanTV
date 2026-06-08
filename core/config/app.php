@@ -1,6 +1,11 @@
 <?php
 use Illuminate\Support\Facades\Facade;
-require_once('timezone.php');
+// __DIR__ resolves relative to config/, not the CWD of the process
+// loading this file. Without it, `php artisan config:cache` (which
+// runs from the project root) can't find timezone.php and the
+// $timezone assignment on line 69 below blows up with an
+// "Undefined variable" fatal.
+require_once(__DIR__ . '/timezone.php');
 return [
 
     /*
