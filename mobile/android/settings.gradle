@@ -32,6 +32,14 @@ plugins {
     // The alternative (upgrade AGP to 8.6+ for a newer R8) is a bigger
     // blast radius — sticking with the metadata downgrade.
     id "org.jetbrains.kotlin.android" version "2.0.21" apply false
+    // Reads mobile/android/app/google-services.json at build time and bakes
+    // the Firebase project config (default app + OAuth client IDs) into the
+    // APK as Android resources. Without this, Firebase.initializeApp() in
+    // main.dart runs with empty defaults and google_sign_in can't locate
+    // the web OAuth client ID → "Continue with Google" no-ops. Required by
+    // firebase_core / firebase_messaging / firebase_analytics /
+    // firebase_crashlytics / google_sign_in — all of which we ship.
+    id "com.google.gms.google-services" version "4.4.2" apply false
 }
 
 include ":app"
