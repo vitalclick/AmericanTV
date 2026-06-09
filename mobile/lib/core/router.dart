@@ -11,12 +11,20 @@ import '../features/home/presentation/home_shell.dart';
 import '../features/video/presentation/video_detail_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
-  final auth = ref.watch(authControllerProvider);
+  final notifier = _AuthChangeNotifier(ref);
+  ref.onDispose(notifier.dispose);
 
+  // Read auth state inside the redirect — do NOT ref.watch it at the
+  // provider level. Watching would recreate the entire GoRouter (and force
+  // MaterialApp.router to rebuild its Navigator) on every isWorking flip,
+  // which throws away in-flight ScaffoldMessenger SnackBars and any
+  // mid-tap visual feedback. refreshListenable is the right hook for
+  // re-running the redirect when auth changes.
   return GoRouter(
     initialLocation: '/',
-    refreshListenable: _AuthChangeNotifier(ref),
+    refreshListenable: notifier,
     redirect: (context, state) {
+      final auth = ref.read(authControllerProvider);
       final loggedIn = auth.status == AuthStatus.authenticated;
       final loggingIn = state.matchedLocation == '/login' ||
           state.matchedLocation == '/register' ||
@@ -53,12 +61,17 @@ final routerProvider = Provider<GoRouter>((ref) {
 });
 
 /// Bridges Riverpod's `authControllerProvider` to go_router's
-/// `refreshListenable` so the redirect runs whenever auth status changes.
+/// `refreshListenable`. Only fires when the auth *status* transitions —
+/// firing on every state change (incl. isWorking / errorMessage) would
+/// retrigger the redirect on every button tap, which both re-evaluates
+/// routes unnecessarily and racing with the LoginScreen's own snackbar.
 class _AuthChangeNotifier extends ChangeNotifier {
   _AuthChangeNotifier(Ref ref) {
     ref.listen<AuthState>(
       authControllerProvider,
-      (_, __) => notifyListeners(),
+      (prev, next) {
+        if (prev?.status != next.status) notifyListeners();
+      },
     );
   }
 }

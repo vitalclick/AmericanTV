@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../api/api_exception.dart';
@@ -95,11 +96,18 @@ class AuthController extends StateNotifier<AuthState> {
         errorMessage: e.message,
       );
       return false;
-    } catch (e) {
+    } catch (e, st) {
+      // Generic catch is here for native-SDK throws (PlatformException from
+      // google_sign_in / sign_in_with_apple) that wouldn't surface as an
+      // ApiException. Without the debug log, the user only ever sees the
+      // generic banner below and we have no way to diagnose.
+      if (kDebugMode) {
+        debugPrint('Social sign-in failed: $e\n$st');
+      }
       state = state.copyWith(
         status: AuthStatus.unauthenticated,
         isWorking: false,
-        errorMessage: 'Could not complete sign-in.',
+        errorMessage: 'Could not complete sign-in: $e',
       );
       return false;
     }
