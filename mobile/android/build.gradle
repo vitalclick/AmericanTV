@@ -3,6 +3,27 @@ allprojects {
         google()
         mavenCentral()
     }
+
+    // Force every transitive kotlin-stdlib (and kotlin-reflect) artifact
+    // down to 2.0.21. Without this, some Flutter plugins (observed:
+    // package_info_plus) pull in kotlin-stdlib-2.2.0 transitively, and
+    // our 2.0.21 Kotlin compiler fails with:
+    //   "Module was compiled with an incompatible version of Kotlin.
+    //    The binary version of its metadata is 2.2.0, expected 2.0.0."
+    //
+    // Going the other way (bumping our compiler to 2.2) doesn't work —
+    // AGP 8.3's bundled R8 caps at reading Kotlin metadata 2.0.x. We're
+    // boxed in until AGP bumps R8 (8.6+), so pin stdlib instead.
+    configurations.all {
+        resolutionStrategy.eachDependency { details ->
+            if (details.requested.group == "org.jetbrains.kotlin" &&
+                (details.requested.name.startsWith("kotlin-stdlib") ||
+                 details.requested.name == "kotlin-reflect")) {
+                details.useVersion "2.0.21"
+                details.because "match project Kotlin compiler (AGP 8.3 R8 metadata cap)"
+            }
+        }
+    }
 }
 
 rootProject.buildDir = "../build"
