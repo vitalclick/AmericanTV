@@ -60,20 +60,12 @@ dependencies:
 
   # Misc
   cached_network_image: ^3.4.1
-  intl: ^0.19.0  # pinned by flutter_localizations (transitive via better_player_plus)
+  intl: ^0.20.2  # pinned by flutter_localizations (transitive via better_player_plus)
   cupertino_icons: ^1.0.8
   qr_flutter: ^4.1.0
   file_picker: ^8.1.2
   wakelock_plus: ^1.2.8
   flutter_local_notifications: ^17.2.3
-
-dependency_overrides:
-  # package_info_plus 9.x's Android Gradle script reads
-  # `android.flutter.compileSdkVersion`, an extension only provided by the
-  # Flutter 3.27+ Gradle plugin. CI is pinned to Flutter 3.24.x (to keep
-  # better_player_plus + the intl 0.19 pin working), so hold this transitive
-  # dependency on the 8.x line, which uses the classic Gradle configuration.
-  package_info_plus: ">=8.0.0 <9.0.0"
 
 dev_dependencies:
   flutter_test:
