@@ -1,3 +1,6 @@
+import 'dart:io' show Platform;
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 /// Typed access to environment variables. Fails fast at startup if a required
@@ -5,7 +8,19 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 class Env {
   Env._();
 
-  static String get apiBaseUrl => _required('API_BASE_URL');
+  static String get apiBaseUrl {
+    final raw = _required('API_BASE_URL');
+    // The Android emulator can't reach the host machine's `localhost`
+    // (that name resolves to the emulator itself). Rewrite to 10.0.2.2,
+    // which the emulator maps to the host's loopback. Debug builds only —
+    // production builds should be pointing at a real hostname anyway.
+    if (kDebugMode && !kIsWeb && Platform.isAndroid) {
+      return raw
+          .replaceFirst('://localhost', '://10.0.2.2')
+          .replaceFirst('://127.0.0.1', '://10.0.2.2');
+    }
+    return raw;
+  }
 
   static String? get revenueCatIosKey => dotenv.maybeGet('REVENUECAT_IOS_KEY');
 

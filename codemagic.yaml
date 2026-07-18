@@ -158,6 +158,28 @@ definitions:
         $PB -c "Delete :ITSAppUsesNonExemptEncryption" $P || true
         $PB -c "Add :ITSAppUsesNonExemptEncryption bool false" $P
 
+        # Google Sign-In iOS configuration. Mirrors CLIENT_ID and
+        # REVERSED_CLIENT_ID from ios/Runner/GoogleService-Info.plist so
+        # GoogleSignIn SDK 7.x can locate its OAuth client and intercept
+        # the redirect callback. Without GIDClientID OR the URL scheme,
+        # GoogleSignIn().signIn() throws "client ID not found" / never
+        # gets the auth code back from Safari.
+        GID_CLIENT_ID="92747944753-hs9tda8eeusc2g3nj3c0mu2schc0dljp.apps.googleusercontent.com"
+        REVERSED_CLIENT_ID="com.googleusercontent.apps.92747944753-hs9tda8eeusc2g3nj3c0mu2schc0dljp"
+
+        $PB -c "Delete :GIDClientID" $P || true
+        $PB -c "Add :GIDClientID string $GID_CLIENT_ID" $P
+
+        # Register the reversed-client-id URL scheme. iOS uses CFBundleURLTypes
+        # (array of dicts, each with a CFBundleURLSchemes array). Idempotent
+        # via a full Delete-then-Add of the parent key.
+        $PB -c "Delete :CFBundleURLTypes" $P || true
+        $PB -c "Add :CFBundleURLTypes array" $P
+        $PB -c "Add :CFBundleURLTypes:0 dict" $P
+        $PB -c "Add :CFBundleURLTypes:0:CFBundleTypeRole string Editor" $P
+        $PB -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes array" $P
+        $PB -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string $REVERSED_CLIENT_ID" $P
+
     - &s_android_proguard
       name: Copy Android proguard rules + network security config
       script: |
@@ -197,6 +219,26 @@ definitions:
         # in the log.
         if [ -n "${CM_KEYSTORE_PATH:-}" ]; then
           echo "[android-signing] keystore injected at $CM_KEYSTORE_PATH"
+
+          # Extract and print the SHA-1 and SHA-256 of the upload key so
+          # they can be registered in Firebase Console → Project settings
+          # → Android app → Add fingerprint. Required for Google Sign-In
+          # to succeed on TestFlight/Play distributions (the debug
+          # keystore SHA-1 is irrelevant for those builds). Failures
+          # here are non-fatal — keytool absence shouldn't block the AAB.
+          if command -v keytool >/dev/null 2>&1 && [ -n "${CM_KEYSTORE_PASSWORD:-}" ]; then
+            ALIAS="${CM_KEY_ALIAS:-upload}"
+            echo "[android-signing] Upload key fingerprints (register these in Firebase for Google Sign-In on Play):"
+            keytool -list -v \
+              -keystore "$CM_KEYSTORE_PATH" \
+              -alias "$ALIAS" \
+              -storepass "$CM_KEYSTORE_PASSWORD" \
+              2>/dev/null | grep -E 'SHA1:|SHA256:' || \
+              echo "[android-signing]   (keytool could not read alias '$ALIAS' — check CM_KEY_ALIAS)"
+            echo "[android-signing] NOTE: For end users installing from Play Store, you ALSO need"
+            echo "[android-signing] the Play App Signing SHA-1 — find it in Play Console → Setup →"
+            echo "[android-signing] App signing → App signing key certificate."
+          fi
         else
           echo "[android-signing] WARNING: CM_KEYSTORE_PATH is empty." >&2
           echo "[android-signing] No keystore attached. The AAB will sign with the debug key" >&2
