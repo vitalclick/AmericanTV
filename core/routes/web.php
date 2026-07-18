@@ -69,6 +69,12 @@ Route::controller('SiteController')->group(function () {
     Route::get('cookie-policy', 'cookiePolicy')->name('cookie.policy');
     Route::get('/cookie/accept', 'cookieAccept')->name('cookie.accept');
     Route::get('policy/{slug}', 'policyPages')->name('policy.pages');
+
+    // The Play Console "Privacy policy" field was mistakenly filled with
+    // /pages/privacy-policy — a URL this app never served (policy pages
+    // live under /policy/{slug}, see route above). Redirect it so the
+    // link already on file with Google stops 404ing.
+    Route::redirect('pages/privacy-policy', '/policy/privacy-policy', 301);
     Route::get('videos/{id?}', 'getAllVideos')->name('video.get');
     Route::get('trending-list', 'trendingList')->name('trending.list');
     Route::get('shorts-list', 'shortsList')->name('shorts.list');
