@@ -4,7 +4,7 @@
         <div class="container">
             <div class="breadcrumb-wrapper">
                 <a class="link" href="{{ route('home') }}">
-                    <img src="{{ siteLogo() }}" alt="logo">
+                    <img class="breadcrumb-logo" src="{{ siteLogo('dark') }}" alt="logo">
                 </a>
                 <h2 class="breadcrumb-list__item mt-3 mb-0">{{ __($pageTitle) }}</h2>
             </div>
@@ -92,6 +92,13 @@
             text-align: center;
             padding: 30px 0;
             box-shadow: 0 0 10px hsl(var(--white)/.1);
+        }
+
+        .breadcrumb-logo {
+            max-height: 140px;
+            max-width: 100%;
+            height: auto;
+            width: auto;
         }
 
         .account-deletion h4 {
