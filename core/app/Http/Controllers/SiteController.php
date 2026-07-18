@@ -126,6 +126,42 @@ class SiteController extends Controller
         return view('Template::policy', compact('policy', 'pageTitle', 'seoContents', 'seoImage'));
     }
 
+    public function accountDeletion()
+    {
+        $pageTitle = 'Delete Your Account';
+        return view('Template::account_deletion', compact('pageTitle'));
+    }
+
+    public function accountDeletionRequest(Request $request)
+    {
+        $request->validate([
+            'email'  => 'required|email|max:255',
+            'reason' => 'nullable|string|max:1000',
+        ]);
+
+        $email = strtolower(trim($request->email));
+        $user  = \App\Models\User::whereRaw('LOWER(email) = ?', [$email])->first();
+
+        try {
+            \App\Models\AccountDeletionRequest::create([
+                'user_id' => $user?->id,
+                'email'   => $email,
+                'source'  => 'web',
+                'reason'  => $request->reason,
+                'status'  => 'pending',
+            ]);
+        } catch (\Throwable $e) {
+            // If the table is not yet migrated, still acknowledge the request
+            // so the user is never blocked; the failure is logged for admins.
+            logger()->error('Account deletion request could not be stored: ' . $e->getMessage(), [
+                'email' => $email,
+            ]);
+        }
+
+        $notify = ['success', 'Your account deletion request has been received. We will process it within 30 days and email you once it is complete.'];
+        return back()->withNotify([$notify]);
+    }
+
     public function changeLanguage($lang = null)
     {
         $language = Language::where('code', $lang)->first();

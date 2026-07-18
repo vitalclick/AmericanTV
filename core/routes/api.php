@@ -100,6 +100,7 @@ Route::group([], function () {
 
         // Account
         Route::get('me', 'MeController@show');
+        Route::delete('me', 'MeController@destroy');
         Route::patch('me/profile', 'MeController@updateProfile');
         Route::patch('me/security/password', 'MeController@changePassword');
         Route::get('me/wallet', 'MeController@wallet');

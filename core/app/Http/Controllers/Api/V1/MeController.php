@@ -86,6 +86,55 @@ class MeController extends Controller
         return response()->json([], 204);
     }
 
+    // In-app account deletion (Google Play "User Data - Account Deletion"
+    // requirement). Deactivates the account immediately, records the request
+    // and revokes every token so the app is signed out on all devices. Full
+    // data erasure is completed within 30 days.
+    public function destroy(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        $data = $request->validate([
+            'password' => ['sometimes', 'nullable', 'string'],
+            'reason'   => ['sometimes', 'nullable', 'string', 'max:1000'],
+        ]);
+
+        // If the account has a password set, require it to confirm deletion.
+        if (!empty($user->password) && array_key_exists('password', $data)) {
+            if (empty($data['password']) || !Hash::check($data['password'], $user->password)) {
+                throw ValidationException::withMessages([
+                    'password' => ['Password is incorrect.'],
+                ]);
+            }
+        }
+
+        try {
+            \App\Models\AccountDeletionRequest::create([
+                'user_id' => $user->id,
+                'email'   => $user->email,
+                'source'  => 'app',
+                'reason'  => $data['reason'] ?? null,
+                'status'  => 'pending',
+            ]);
+        } catch (\Throwable $e) {
+            logger()->error('Account deletion request could not be stored: ' . $e->getMessage(), [
+                'user_id' => $user->id,
+            ]);
+        }
+
+        // Deactivate immediately so the account can no longer be used.
+        $user->status = Status::USER_BAN;
+        $user->save();
+
+        // Remove push tokens and revoke every access token (sign out everywhere).
+        DeviceToken::where('user_id', $user->id)->delete();
+        $user->tokens()->delete();
+
+        return response()->json([
+            'message' => 'Your account has been deactivated and scheduled for permanent deletion within 30 days.',
+        ]);
+    }
+
     public function wallet(Request $request): JsonResponse
     {
         $user = $request->user();

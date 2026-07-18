@@ -98,6 +98,12 @@ Route::controller('SiteController')->group(function () {
     Route::get('maintenance-mode', 'maintenance')->withoutMiddleware('maintenance')->name('maintenance');
 
     Route::get('search', 'search')->name('search');
+
+    // Account deletion (Google Play "User Data - Account Deletion" requirement).
+    // Must resolve at the exact public URL declared in the Play Data safety form.
+    Route::get('pages/account-deletion', 'accountDeletion')->name('account.deletion');
+    Route::post('pages/account-deletion', 'accountDeletionRequest')->name('account.deletion.request');
+
     Route::get('/{slug}', 'pages')->name('pages');
     Route::get('/', 'index')->name('home');
 });
